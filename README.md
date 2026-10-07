@@ -24,7 +24,7 @@ node tests/run.mjs               # unit tests (no dependencies)
 
 ## Using it
 
-Profile → move → camera guide (animated humanoids show where to put the phone; **side** or **front** view, Skip any time) → **Upload** (first option; from Photos, then trim to ≤ 5 s) or **Record** (the camera permission is only requested after you tap Record → Open camera; 3/5/10 s countdown with beeps, 5 s clip) → quality pre-check → analysis (live preview shows the tracked player in a green box with the skeleton) → report you swipe **up/down** like Stories. The score is saved to the profile; **Progress** shows per-metric trends.
+One player profile (name and optional photo, saved once) → a swipeable carousel of moves (only **Shooting form** is live; Jab step, Layups and Crossover are greyed out as coming soon) → one **film** screen: an animated player shows where to put the phone (toggle **from the side** or **from the front**), three quick checks, then **Choose a video** (from Photos, then trim to ≤ 5 s; the clip's first frame and a loader show while it is read) or **Record** (the camera permission is only requested after you tap Open camera; 3/5/10 s countdown with beeps, 5 s clip) → quality pre-check → analysis (live preview shows the tracked player in a green box with the skeleton) → a report you swipe **up/down** like Stories, with a score meter and a target-zone bar per issue, cropped to the player. Each score is saved to the profile; **Progress** (top bar, next to your profile circle) shows per-metric trends.
 
 Filming tips: phone upright (portrait) at hip height about 3 m away, shooter side-on **or** facing the phone, whole body in frame, good light, nobody else in the shot. Side and front are detected automatically from the shoulders; the side view measures angles (release, set elbow, knee dip, balance, follow-through), the front view measures elbow alignment, sideways balance and off hand. Release height, tempo and off hand work from both. Clips must be **60 fps or higher** (iPhone: Settings → Camera → Record Video → 1080p HD at 60 fps, or use slow-mo 120/240 fps and upload).
 
@@ -36,7 +36,11 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 | `js/precheck.js` | Quality checks with specific messages; main-subject selection and the multiple-people rule |
 | `js/pose.js` | MediaPipe wrapper, frame stepping, fps measurement, key-frame grabs |
 | `js/capture.js` | Camera, countdown/beeps, fixed-length recording |
-| `js/report.js`, `js/skeleton.js` | Stories report, skeleton overlay with shooting arm highlighted |
+| `js/report.js`, `js/skeleton.js` | Stories report (score meter, target-zone bars, player-centred crops, scroll cascade), skeleton overlay with shooting arm highlighted |
+| `js/motion.js` | Spring physics: press feedback on every control, the draggable details sheet |
+| `js/icons.js`, `js/tokens.js` | One icon set and the matte basketball; design tokens read from `styles.css` for canvas and SVG |
+| `images/court.jpg` | Court photo used as the app backdrop (sharp on home, softened elsewhere) |
+| `PRODUCT.md` | Product context for design work |
 | `js/coaching.js` | What / why / how-to-improve copy and personalised advice (template + optional LLM) |
 | `js/store.js`, `js/progress.js` | Local storage (profiles, scores only) and progress charts |
 | `config/settings.json` | **Editable** reference ranges, metric weights, quality thresholds, LLM proxy URL |
@@ -72,4 +76,5 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 - Frame rate is measured by playing the clip (needs Safari 15.4+); if it can't be measured the check is skipped. Variable-frame-rate slow-mo clips can report odd numbers; if a valid clip is rejected, re-export it at a fixed rate.
 - Recorded clips use the camera's reported frame rate. Most iPhones give 60 fps in Safari when asked; if yours reports 30 you'll get a clear message.
 - Analysis steps through the clip by seeking and runs the pose model per frame at `analysisFps` (default 30; set 60 in `config/settings.json` for finer timing at roughly twice the processing time). The next frame is decoded while the current one is processed, and the model is preloaded at app start. The screen shows frame count and time remaining.
+- The look uses frosted glass (`backdrop-filter`) over the court photo; it falls back to solid surfaces when the phone asks for reduced transparency. Motion respects reduced motion.
 - Saved data lives in the browser's local storage on that phone/profile. Clearing Safari data or removing the app erases history (cloud sync is the spec's phase 2).
