@@ -2,7 +2,7 @@
 import { h, mount, toast, topbar, avatar } from './ui.js';
 import * as store from './store.js';
 import { MOVES } from './moves.js';
-import { placementSvg } from './guide.js';
+import { guideSvg } from './guide.js';
 import { beep, onOrientationChange, openCamera, orientationNow, recordFor, stopStream, unlockAudio } from './capture.js';
 import { makeVideo, measureFps, preloadPose, whenReady } from './pose.js';
 import { checkFps, checkOrientation } from './precheck.js';
@@ -61,28 +61,42 @@ function moveScreen() {
 }
 
 // ---------- 3. Camera placement guide ----------
-function guideScreen() {
-  const g = S.move.guide;
+function guideScreen(view = 'side') {
+  const g = S.move.guide, v = g.views[view];
+  const tabs = h('div', { class: 'seg' },
+    h('button', { class: view === 'side' ? 'on' : '', onClick: () => go(guideScreen, 'side') }, 'From the side'),
+    h('button', { class: view === 'front' ? 'on' : '', onClick: () => go(guideScreen, 'front') }, 'From the front'));
   mount(h('div', { class: 'screen' },
     topbar(g.title, () => go(moveScreen)),
-    placementSvg(g.orientation),
-    h('ol', { style: { color: 'var(--text)', fontWeight: 700, lineHeight: 1.5, paddingLeft: '22px' } }, g.steps.map((s) => h('li', {}, s))),
+    tabs,
+    guideSvg(view),
+    h('p', { style: { margin: '2px 0 0', color: 'var(--text)', fontWeight: 700 } }, v.note),
+    h('ol', { class: 'steps' }, v.steps.map((t) => h('li', {}, t))),
     h('div', { class: 'spacer' }),
     h('div', { class: 'stack' }, h('button', { class: 'btn', onClick: () => go(captureScreen) }, 'Got it'),
       h('button', { class: 'btn ghost', onClick: () => go(captureScreen) }, 'Skip'))));
 }
 
 // ---------- 4. Capture: record or upload ----------
-function captureScreen(tab = 'record') {
+function captureScreen(tab = 'upload') {
   const body = h('div', { style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '12px' } });
   const seg = h('div', { class: 'seg' },
-    h('button', { class: tab === 'record' ? 'on' : '', onClick: () => go(captureScreen, 'record') }, 'Record'),
-    h('button', { class: tab === 'upload' ? 'on' : '', onClick: () => go(captureScreen, 'upload') }, 'Upload'));
+    h('button', { class: tab === 'upload' ? 'on' : '', onClick: () => go(captureScreen, 'upload') }, 'Upload'),
+    h('button', { class: tab === 'record' ? 'on' : '', onClick: () => go(captureScreen, 'record') }, 'Record'));
   mount(h('div', { class: 'screen' }, topbar(S.move.name, () => go(guideScreen)), seg, body));
   (tab === 'record' ? recordPane : uploadPane)(body);
 }
 
-async function recordPane(body) {
+/** The camera (and its permission prompt) is only started once the user taps "Open camera". */
+function recordPane(body) {
+  const intro = h('div', { class: 'card stack', style: { marginTop: '8px' } },
+    h('h2', {}, 'Record a shot'),
+    p5('Swish will ask to use your camera when you tap the button below. Nothing is recorded until you press Record.'),
+    h('button', { class: 'btn', onClick: () => { intro.remove(); startRecorder(body); } }, 'Open camera'));
+  body.append(intro);
+}
+
+async function startRecorder(body) {
   let stream = null, busy = false, countdown = 5;
   const video = h('video', { autoplay: true, muted: true, playsinline: true });
   video.muted = true;
@@ -152,18 +166,18 @@ async function startUpload(file) {
 
 function uploadPane(body) {
   const input = h('input', { type: 'file', accept: 'video/*', style: { display: 'none' } });
-  const status = h('p', {}, 'Choose a clip from your photo library. 60 fps or higher gives the best results; 30 fps works but is lower quality.');
+  const status = h('p', {}, 'Pick a video of your shot from your photo library.');
   const pick = h('button', { class: 'btn', onClick: () => input.click() }, 'Choose a video');
   input.addEventListener('change', async () => {
     const f = input.files[0];
     input.value = ''; // so picking the same video again still fires a change event
     if (!f) return;
-    pick.disabled = true; status.textContent = 'Reading your clip…';
+    pick.disabled = true; status.textContent = 'Reading your video…';
     await startUpload(f);
   });
-  body.append(h('div', { class: 'card stack', style: { marginTop: '8px' } }, h('h2', {}, 'Upload a clip'), status, pick, input,
-    S.lastFile ? h('button', { class: 'btn alt', onClick: () => { pick.disabled = true; status.textContent = 'Reading your clip…'; startUpload(S.lastFile); } }, `Use ${S.lastFile.name || 'last clip'} again`) : null,
-    h('p', {}, 'Tip: slow-motion clips recorded at 120 or 240 fps work great.')));
+  body.append(h('div', { class: 'card stack', style: { marginTop: '8px' } }, h('h2', {}, 'Upload a video'), status, pick, input,
+    S.lastFile ? h('button', { class: 'btn alt', onClick: () => { pick.disabled = true; status.textContent = 'Reading your video…'; startUpload(S.lastFile); } }, 'Use the last video again') : null,
+  ));
 }
 
 // ---------- 4b. Trim ----------
@@ -224,9 +238,9 @@ function errorScreen(message) {
     h('h1', {}, 'Hold up'),
     h('div', { class: 'card err' }, h('b', { style: { fontSize: '19px', lineHeight: 1.35 } }, message)),
     h('div', { class: 'stack' },
-      S.lastFile ? h('button', { class: 'btn', onClick: () => startUpload(S.lastFile) }, 'Try this clip again') : null,
-      h('button', { class: S.lastFile ? 'btn alt' : 'btn', onClick: () => go(captureScreen, 'record') }, 'Record again'),
-      h('button', { class: 'btn alt', onClick: () => go(captureScreen, 'upload') }, 'Choose another clip'),
+      S.lastFile ? h('button', { class: 'btn', onClick: () => startUpload(S.lastFile) }, 'Try this video again') : null,
+      h('button', { class: S.lastFile ? 'btn alt' : 'btn', onClick: () => go(captureScreen, 'upload') }, 'Choose another video'),
+      h('button', { class: 'btn alt', onClick: () => go(captureScreen, 'record') }, 'Record a new one'),
       h('button', { class: 'btn ghost', onClick: () => go(moveScreen) }, 'Home'))));
 }
 
@@ -237,7 +251,7 @@ function reportScreen(result) {
     metrics: Object.fromEntries(Object.entries(result.metrics).map(([id, m]) => [id, { value: m.value, score: m.score, status: m.status }])),
   }) || toast('Could not save (storage full?)');
   mount(renderReport({ result, move: S.move, profile: S.profile, actions: {
-    onRetry: () => go(captureScreen, 'record'), onProgress: () => go(progressScreen, S.move), onHome: () => go(moveScreen) } }));
+    onRetry: () => go(captureScreen, 'upload'), onProgress: () => go(progressScreen, S.move), onHome: () => go(moveScreen) } }));
 }
 
 // ---------- 10. Progress ----------
@@ -245,8 +259,8 @@ function progressScreen(move) {
   const sessions = store.sessionsFor(S.profile.id, move.id);
   const overall = sessions.map((s) => ({ ts: s.ts, v: s.score }));
   const d = trend(overall);
-  const cards = move.metrics.map((id) => {
-    const pts = sessions.map((s) => ({ ts: s.ts, v: s.metrics[id]?.score ?? 0 }));
+  const cards = move.metrics.filter((id) => sessions.some((s) => s.metrics[id])).map((id) => {
+    const pts = sessions.filter((s) => s.metrics[id]).map((s) => ({ ts: s.ts, v: s.metrics[id].score }));
     const dt = trend(pts);
     return h('div', { class: 'card' },
       h('div', { class: 'mini' }, h('b', {}, move.copy[id].name),

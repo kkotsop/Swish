@@ -24,9 +24,9 @@ node tests/run.mjs               # unit tests (no dependencies)
 
 ## Using it
 
-Profile → move → camera guide (Skip any time) → **Record** (3/5/10 s countdown with beeps, 5 s clip) or **Upload** (from Photos, then trim to ≤ 5 s) → quality pre-check → analysis (live preview shows the tracked player in a green box with the skeleton) → report you swipe **up/down** like Stories. The score is saved to the profile; **Progress** shows per-metric trends.
+Profile → move → camera guide (animated humanoids show where to put the phone; **side** or **front** view, Skip any time) → **Upload** (first option; from Photos, then trim to ≤ 5 s) or **Record** (the camera permission is only requested after you tap Record → Open camera; 3/5/10 s countdown with beeps, 5 s clip) → quality pre-check → analysis (live preview shows the tracked player in a green box with the skeleton) → report you swipe **up/down** like Stories. The score is saved to the profile; **Progress** shows per-metric trends.
 
-Filming tips: phone upright (portrait) at hip height about 3 m away, shooter side-on, whole body in frame, good light, nobody else in the shot. Clips must be **60 fps or higher** (iPhone: Settings → Camera → Record Video → 1080p HD at 60 fps, or use slow-mo 120/240 fps and upload).
+Filming tips: phone upright (portrait) at hip height about 3 m away, shooter side-on **or** facing the phone, whole body in frame, good light, nobody else in the shot. Side and front are detected automatically from the shoulders; the side view measures angles (release, set elbow, knee dip, balance, follow-through), the front view measures elbow alignment, sideways balance and off hand. Release height, tempo and off hand work from both. Clips must be **60 fps or higher** (iPhone: Settings → Camera → Record Video → 1080p HD at 60 fps, or use slow-mo 120/240 fps and upload).
 
 ## What's where
 
@@ -60,12 +60,12 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 
 ## Metrics (shooting, equal weight by default)
 
-Release angle · Forward drift/balance · Elbow angle at set · Knee dip (deepest bend of the shot) · Elbow alignment · Release height · Follow-through · Shot tempo · Guide (off) hand position. Each has a status (good / borderline / needs work), a value, and a high/medium/low tracking-confidence dot from landmark visibility.
+**Side view:** Release angle (0–90°, from the wrist's fastest upward move) · Forward drift · Elbow angle at set · Knee dip (deepest bend) · Release height (fingertip when the ball leaves the hand, estimated; the ball is not tracked) · Follow-through (good from 40°) · Tempo · Off hand. **Front view:** Elbow alignment · Sideways drift · Release height · Tempo · Off hand. Each has a status (good / borderline / needs work), a value, and a high/medium/low tracking-confidence dot from landmark visibility.
 
 ## Known limits and things to check on a real iPhone
 
 - **Placeholder ranges** until you calibrate; treat early scores as relative, not absolute.
-- Side-on only: elbow *flare* toward the camera can't be seen in 2D, so *Elbow alignment* measures forearm tilt from vertical instead.
+- Elbow alignment (flare) is only measured from the front, and angle-based metrics only from the side, because each is unreliable from the other view. Camera angles in between (about 45°) may be classed as either.
 - Ball tracking is approximated from the wrist, as per the spec.
 - Shot isolation scores the **highest** wrist peak in the clip; if you shoot several times in one clip, the best-extended one is used.
 - The player is only accepted if the pose looks like a real, reasonably large person (upright body, good joint visibility, at least ~30% of the frame height). Balls, hoops and tiny far-away figures are ignored; if nobody qualifies you get a specific message.

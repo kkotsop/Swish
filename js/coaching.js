@@ -41,15 +41,15 @@ export const SHOOTING_COPY = {
   },
   elbowAlignment: {
     name: 'Elbow alignment', short: 'Elbow line',
-    what: 'How vertical your forearm stays under the ball as it rises, measured as tilt from straight up.',
-    why: 'When the elbow drifts out or ahead, the ball goes sideways or flat instead of straight at the rim.',
+    what: 'How well your elbow stays under the ball as it rises, seen from the front: the forearm tilt away from straight up.',
+    why: 'When the elbow flares out, the ball is pushed sideways instead of straight at the rim.',
     improve: (v, r, res) => res.status === 'good'
       ? `Your forearm is only ${fmt(v, 0)}° off vertical. Elbow stays under the ball.`
       : `Your forearm tilts ${fmt(v, 0)}° off vertical; aim for under ${r.good[1]}°. Keep your elbow under the ball and point it at the rim.`,
   },
   releaseHeight: {
     name: 'Release height', short: 'Height',
-    what: 'Where the ball leaves your hand compared with your standing height.',
+    what: 'How high above the floor the ball leaves your fingertips, compared with your standing height.',
     why: 'A higher release is harder to block and gives the ball a steeper path down into the rim.',
     improve: (v, r, res) => res.status === 'good'
       ? `You release at ${fmt(v, 2)}x your height, comfortably above your head.`
@@ -73,6 +73,14 @@ export const SHOOTING_COPY = {
         ? `Your shot takes ${fmt(v, 2)} s; aim for ${r.good[0]}–${r.good[1]} s. Dip and rise in one fluid motion without pausing at the set point.`
         : `Your shot takes ${fmt(v, 2)} s, quicker than the ${r.good[0]}–${r.good[1]} s zone. Slow the load slightly so legs and arm work together.`,
   },
+  sideDrift: {
+    name: 'Sideways drift', short: 'Balance',
+    what: 'How far your body slides left or right between takeoff and landing, measured in shoulder widths (seen from the front).',
+    why: 'Sliding sideways in the air pulls the ball off line, so it misses left or right. Good shooters land in the same spot they jumped from.',
+    improve: (v, r, res) => res.status === 'good'
+      ? `You moved ${fmt(v, 2)} shoulder widths sideways. Great balance, you land where you launched.`
+      : `You drifted ${fmt(v, 2)} shoulder widths sideways; aim for under ${r.good[1]}. Square your feet to the rim, jump straight up and land in the same spot.`,
+  },
   guideHand: {
     name: 'Guide hand', short: 'Off hand',
     what: 'How close your off hand stays to the ball while it is held and rising, measured in forearm lengths from your shooting hand.',
@@ -87,12 +95,44 @@ function fmt(v, d) { return Number(v).toFixed(d); }
 
 export const COPY = { shooting: SHOOTING_COPY };
 
+/** One-line "do this next" per metric, used by the quick summary. */
+export const NEXT_STEP = {
+  releaseAngle: 'Shoot up, not out: drive through your legs and release at the top.',
+  forwardDrift: 'Jump straight up and land on the spot you took off from.',
+  elbowAngle: 'Set the ball in a clear L-shape, elbow near 90°, before you extend.',
+  kneeDip: 'Sit into the shot a little more so your legs power it.',
+  elbowAlignment: 'Keep your elbow under the ball and pointing at the rim.',
+  sideDrift: 'Square up, jump straight up and land in the same spot.',
+  releaseHeight: 'Release higher: extend fully and let go above your forehead.',
+  followThrough: 'Snap your wrist and hold the finish with fingers pointing down.',
+  tempo: 'Dip and rise in one smooth motion, no pause at the set point.',
+  guideHand: 'Keep your off hand on the side of the ball and let it come off at release.',
+};
+
+/**
+ * Quick, plain-language summary for under the score: what it means, what works, what to do next.
+ * metrics: { id: { score, status } }. Returns { meaning, works, next }.
+ */
+export function summarize(move, metrics, score) {
+  const copy = COPY[move];
+  const list = Object.entries(metrics).filter(([, m]) => m.status !== 'unknown');
+  const meaning = score >= 85 ? 'Excellent form. Very little to change.'
+    : score >= 70 ? 'Solid form. A couple of small fixes will tighten it up.'
+    : score >= 50 ? 'Getting there. A few clear fixes will lift this quickly.'
+    : 'Early days. Work on one fix at a time and the score will climb.';
+  const best = list.filter(([, m]) => m.status === 'good').sort((a, b) => b[1].score - a[1].score).slice(0, 2).map(([id]) => copy[id].name.toLowerCase());
+  const works = best.length ? `Working well: ${best.join(' and ')}.` : 'Nothing is in the green yet, so pick one fix and repeat it.';
+  const worst = list.filter(([, m]) => m.status !== 'good').sort((a, b) => a[1].score - b[1].score)[0];
+  const next = worst ? `Next: ${NEXT_STEP[worst[0]]}` : 'Next: film a few more shots to check this is repeatable.';
+  return { meaning, works, next };
+}
+
 /** Template advice for every metric. Returns { metricId: string }. */
 export function templateAdvice(move, metrics, ranges) {
   const out = {};
   for (const [id, res] of Object.entries(metrics)) {
     out[id] = res.status === 'unknown' || !Number.isFinite(res.value)
-      ? `We couldn't measure ${COPY[move][id].name.toLowerCase()} on this clip. Make sure your whole body and shooting arm are clearly visible, side-on, and try again.`
+      ? `We couldn't measure ${COPY[move][id].name.toLowerCase()} on this clip. Make sure your whole body and shooting arm are clearly visible and try again.`
       : COPY[move][id].improve(res.value, ranges[id], res);
   }
   return out;

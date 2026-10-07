@@ -116,6 +116,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
       const msg = hooks.earlyCheck({ per, brightness: lumas.reduce((a, b) => a + b, 0) / lumas.length });
       if (msg) throw Object.assign(new Error(msg), { early: true });
     }
+    if (hooks.onSample && i % 2 === 0) hooks.onSample(canvas, i);
     if (hooks.onPreview && i % 3 === 0) {
       const main = poses.filter(isPlausibleHuman).sort((a, b) => (poseBox(b)?.h || 0) - (poseBox(a)?.h || 0))[0] || null;
       hooks.onPreview(canvas, main);
