@@ -3,6 +3,7 @@
   "analysisFps": 60,
   "clipSeconds": 5,
   "minFps": 60,
+  "hardMinFps": 24,
   "quality": {
     "minPersonFrames": 0.6,
     "minBrightness": 45,

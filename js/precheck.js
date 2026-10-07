@@ -36,7 +36,8 @@ export function selectSubject(perFrame, times, cfg) {
 }
 
 export const MESSAGES = {
-  fps: (fps, min) => `This clip is ${Math.round(fps)} fps; we need ${min} fps or higher for accurate tracking.`,
+  fpsWarn: (fps, rec) => `This clip is ${Math.round(fps)} fps, which is low quality. It will still work, but ${rec} fps or higher gives much more accurate results.`,
+  fpsBlock: (fps, min) => `This clip is ${Math.round(fps)} fps; we need at least ${min} fps to track a shot.`,
   orientation: (want) => `Please rotate your phone to ${want} for this move.`,
   dark: 'This clip is too dark to analyse. Try recording with more light.',
   noPerson: "We couldn't get a clear view of you. Make sure you're fully in frame and well lit.",
@@ -50,8 +51,11 @@ export function checkOrientation(width, height, want) {
   return (want === 'portrait') === isPortrait ? null : MESSAGES.orientation(want);
 }
 // 5% tolerance: iPhones record "60 fps" as 59.94 and playback-based fps measurement is slightly noisy.
+// Returns null (fine), { level: 'warn', message } (works, but lower quality) or { level: 'block', message }.
 export function checkFps(fps, cfg) {
-  return fps && fps < cfg.minFps * 0.95 ? MESSAGES.fps(fps, cfg.minFps) : null;
+  if (!fps || fps >= cfg.minFps * 0.95) return null;
+  if (fps < cfg.hardMinFps * 0.95) return { level: 'block', message: MESSAGES.fpsBlock(fps, cfg.hardMinFps) };
+  return { level: 'warn', message: MESSAGES.fpsWarn(fps, cfg.minFps) };
 }
 
 /** Returns null if fine, else { code, message }. */

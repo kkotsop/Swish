@@ -86,11 +86,14 @@ test('dark, no-person, orientation, fps messages are specific', () => {
   assert.equal(checkTracking({ subject: none, total: 60, brightness: 120 }, config).code, 'no-person');
   assert.match(checkOrientation(1920, 1080, 'portrait'), /rotate your phone to portrait/);
   assert.equal(checkOrientation(1080, 1920, 'portrait'), null);
-  assert.match(checkFps(30, config), /30 fps.*60 fps or higher/);
+  assert.equal(checkFps(30, config).level, 'warn');
+  assert.match(checkFps(30, config).message, /30 fps.*low quality.*60 fps or higher/);
   assert.equal(checkFps(60, config), null);
   assert.equal(checkFps(59.94, config), null);
   assert.equal(checkFps(58.2, config), null);
-  assert.match(checkFps(45, config), /45 fps/);
+  assert.equal(checkFps(45, config).level, 'warn');
+  assert.equal(checkFps(20, config).level, 'block');
+  assert.match(checkFps(20, config).message, /20 fps.*at least 24 fps/);
 });
 
 test('calibration range = observed range plus buffer', () => {

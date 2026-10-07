@@ -10,7 +10,7 @@ import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
 import { lineChart, trend } from './progress.js';
 
-const S = { config: null, profile: null, move: null, cleanup: null };
+const S = { config: null, profile: null, move: null, cleanup: null, lastFile: null };
 
 function go(screen, ...args) {
   if (S.cleanup) { try { S.cleanup(); } catch { /* ignore */ } S.cleanup = null; }
@@ -123,6 +123,7 @@ async function recordPane(body) {
       const secs = S.config.clipSeconds;
       const blob = await recordFor(stream, secs, { onStart: () => { beep(1200, 260, 0.35); badge.style.display = ''; }, onStop: () => { beep(500, 260, 0.35); badge.style.display = 'none'; } });
       stopStream(stream); stream = null;
+      S.lastFile = null;
       const v = makeVideo(blob);
       await whenReady(v);
       go(analyzeScreen, { video: v, start: 0, duration: Math.min(secs, v.duration || secs), fps: settings.frameRate || null, source: 'record' });
@@ -133,24 +134,34 @@ async function recordPane(body) {
   });
 }
 
+/** Read an uploaded file and route it to trim or analysis. Used by the picker and by "try this clip again". */
+async function startUpload(file) {
+  S.lastFile = file;
+  try {
+    const v = makeVideo(file);
+    await whenReady(v);
+    const fps = await measureFps(v);
+    const fpsCheck = fps ? checkFps(fps, S.config) : null;
+    const msg = (fpsCheck && fpsCheck.level === 'block' && fpsCheck.message) || checkOrientation(v.videoWidth, v.videoHeight, S.move.orientation);
+    if (msg) return go(errorScreen, msg);
+    const clip = { video: v, fps, source: 'upload', total: v.duration };
+    if (v.duration > S.config.clipSeconds + 0.3) go(trimScreen, clip); else go(analyzeScreen, { ...clip, start: 0, duration: v.duration });
+  } catch (e) { go(errorScreen, e.message || 'Could not read this video.'); }
+}
+
 function uploadPane(body) {
   const input = h('input', { type: 'file', accept: 'video/*', style: { display: 'none' } });
-  const status = h('p', {}, 'Choose a clip from your photo library. It must be 60 fps or higher.');
+  const status = h('p', {}, 'Choose a clip from your photo library. 60 fps or higher gives the best results; 30 fps works but is lower quality.');
   const pick = h('button', { class: 'btn', onClick: () => input.click() }, 'Choose a video');
   input.addEventListener('change', async () => {
-    const f = input.files[0]; if (!f) return;
+    const f = input.files[0];
+    input.value = ''; // so picking the same video again still fires a change event
+    if (!f) return;
     pick.disabled = true; status.textContent = 'Reading your clip…';
-    try {
-      const v = makeVideo(f);
-      await whenReady(v);
-      const fps = await measureFps(v);
-      const msg = (fps && checkFps(fps, S.config)) || checkOrientation(v.videoWidth, v.videoHeight, S.move.orientation);
-      if (msg) return go(errorScreen, msg);
-      const clip = { video: v, fps, source: 'upload', total: v.duration };
-      if (v.duration > S.config.clipSeconds + 0.3) go(trimScreen, clip); else go(analyzeScreen, { ...clip, start: 0, duration: v.duration });
-    } catch (e) { go(errorScreen, e.message || 'Could not read this video.'); }
+    await startUpload(f);
   });
   body.append(h('div', { class: 'card stack', style: { marginTop: '8px' } }, h('h2', {}, 'Upload a clip'), status, pick, input,
+    S.lastFile ? h('button', { class: 'btn alt', onClick: () => { pick.disabled = true; status.textContent = 'Reading your clip…'; startUpload(S.lastFile); } }, `Use ${S.lastFile.name || 'last clip'} again`) : null,
     h('p', {}, 'Tip: slow-motion clips recorded at 120 or 240 fps work great.')));
 }
 
@@ -185,6 +196,7 @@ async function analyzeScreen(clip) {
   const status = h('b', { style: { fontSize: '20px' } }, 'Starting…');
   mount(h('div', { class: 'screen', style: { justifyContent: 'center', gap: '16px' } },
     h('div', { class: 'big-num' }, '🏀'), h('h1', {}, 'Analysing'), status, h('div', { class: 'progress-track' }, bar),
+    (() => { const w = clip.fps && checkFps(clip.fps, S.config); return w ? h('div', { class: 'card', style: { borderLeft: '6px solid var(--warn)' } }, h('b', {}, 'Heads up: '), w.message) : null; })(),
     p5('This takes about 5–15 seconds. Your video stays on this phone and is deleted when we finish.')));
   try {
     const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { status.textContent = t; }, onProgress: (p) => { bar.style.width = `${Math.round(p * 100)}%`; } });
@@ -204,7 +216,8 @@ function errorScreen(message) {
     h('h1', {}, 'Hold up'),
     h('div', { class: 'card err' }, h('b', { style: { fontSize: '19px', lineHeight: 1.35 } }, message)),
     h('div', { class: 'stack' },
-      h('button', { class: 'btn', onClick: () => go(captureScreen, 'record') }, 'Record again'),
+      S.lastFile ? h('button', { class: 'btn', onClick: () => startUpload(S.lastFile) }, 'Try this clip again') : null,
+      h('button', { class: S.lastFile ? 'btn alt' : 'btn', onClick: () => go(captureScreen, 'record') }, 'Record again'),
       h('button', { class: 'btn alt', onClick: () => go(captureScreen, 'upload') }, 'Choose another clip'),
       h('button', { class: 'btn ghost', onClick: () => go(moveScreen) }, 'Home'))));
 }
