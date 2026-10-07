@@ -70,5 +70,5 @@ Release angle · Forward drift/balance · Elbow angle at set · Knee dip · Elbo
 - Shot isolation scores the **highest** wrist peak in the clip; if you shoot several times in one clip, the best-extended one is used.
 - Frame rate is measured by playing the clip (needs Safari 15.4+); if it can't be measured the check is skipped. Variable-frame-rate slow-mo clips can report odd numbers; if a valid clip is rejected, re-export it at a fixed rate.
 - Recorded clips use the camera's reported frame rate. Most iPhones give 60 fps in Safari when asked; if yours reports 30 you'll get a clear message.
-- Analysis steps through the clip by seeking, then runs the pose model per frame. On older phones it may take longer than 15 s.
+- Analysis steps through the clip by seeking and runs the pose model per frame at `analysisFps` (default 30; set 60 in `config/settings.json` for finer timing at roughly twice the processing time). The next frame is decoded while the current one is processed, and the model is preloaded at app start. The screen shows frame count and time remaining.
 - Saved data lives in the browser's local storage on that phone/profile. Clearing Safari data or removing the app erases history (cloud sync is the spec's phase 2).

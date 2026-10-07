@@ -49,6 +49,19 @@ test('deeper dip scores higher flexion; slower shot has longer tempo', () => {
   assert.ok(slow.metrics.tempo.value > run({}).r.metrics.tempo.value + 0.2, `tempo ${slow.metrics.tempo.value}`);
 });
 
+test('30 fps analysis agrees with 60 fps analysis', () => {
+  const hi = run({}).r;
+  const s30 = makeShot({ fps: 30 });
+  const lo = analyzeShooting(s30.frames, { aspect: ASPECT, fps: 30, config });
+  assert.ok(lo.ok); assert.equal(lo.hand, hi.hand);
+  near(lo.metrics.kneeDip.value, hi.metrics.kneeDip.value, 4, 'knee 30 vs 60');
+  near(lo.metrics.elbowAngle.value, hi.metrics.elbowAngle.value, 8, 'elbow 30 vs 60');
+  near(lo.metrics.tempo.value, hi.metrics.tempo.value, 0.15, 'tempo 30 vs 60');
+  near(lo.metrics.forwardDrift.value, hi.metrics.forwardDrift.value, 0.06, 'drift 30 vs 60');
+  near(lo.metrics.releaseAngle.value, hi.metrics.releaseAngle.value, 12, 'release angle 30 vs 60');
+  near(lo.metrics.releaseHeight.value, hi.metrics.releaseHeight.value, 0.05, 'release height 30 vs 60');
+});
+
 test('no shot in a standing clip is reported', () => {
   const s = makeShot({ kneeFlex: 5, releaseT: 99, dipStart: 99, dipEnd: 99.1, riseEnd: 99.2, landT: 99.3 });
   const r = analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config });

@@ -4,7 +4,7 @@ import * as store from './store.js';
 import { MOVES } from './moves.js';
 import { placementSvg } from './guide.js';
 import { beep, onOrientationChange, openCamera, orientationNow, recordFor, stopStream, unlockAudio } from './capture.js';
-import { makeVideo, measureFps, whenReady } from './pose.js';
+import { makeVideo, measureFps, preloadPose, whenReady } from './pose.js';
 import { checkFps, checkOrientation } from './precheck.js';
 import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
@@ -194,12 +194,13 @@ const p5 = (t) => h('p', {}, t);
 async function analyzeScreen(clip) {
   const bar = h('div', { class: 'progress-bar' });
   const status = h('b', { style: { fontSize: '20px' } }, 'Starting…');
+  const detail = h('p', { style: { margin: 0 } }, ' ');
   mount(h('div', { class: 'screen', style: { justifyContent: 'center', gap: '16px' } },
-    h('div', { class: 'big-num' }, '🏀'), h('h1', {}, 'Analysing'), status, h('div', { class: 'progress-track' }, bar),
+    h('div', { class: 'big-num' }, '🏀'), h('h1', {}, 'Analysing'), status, h('div', { class: 'progress-track' }, bar), detail,
     (() => { const w = clip.fps && checkFps(clip.fps, S.config); return w ? h('div', { class: 'card', style: { borderLeft: '6px solid var(--warn)' } }, h('b', {}, 'Heads up: '), w.message) : null; })(),
     p5('This takes about 5–15 seconds. Your video stays on this phone and is deleted when we finish.')));
   try {
-    const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { status.textContent = t; }, onProgress: (p) => { bar.style.width = `${Math.round(p * 100)}%`; } });
+    const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { status.textContent = t; }, onProgress: (p, info) => { bar.style.width = `${Math.round(p * 100)}%`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · about ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
     if (!out.ok) return go(errorScreen, out.message);
     go(reportScreen, out.result);
   } catch (e) {
@@ -258,6 +259,7 @@ function progressScreen(move) {
 (async function boot() {
   try { S.config = await store.loadConfig(); } catch { mount(h('div', { class: 'screen' }, h('h1', {}, 'Offline'), p5('Could not load settings. Open Swish once with a connection.'))); return; }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  setTimeout(() => preloadPose(S.config), 1500); // warm up pose model while the user picks a profile/move
   const last = store.listProfiles().find((p) => p.id === store.lastProfileId());
   if (last) { S.profile = last; moveScreen(); } else profileScreen();
 })();

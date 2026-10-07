@@ -8,7 +8,7 @@ export const SHOOTING_METRICS = [
 ];
 
 /** Build smoothed per-landmark series in aspect-corrected units (x scaled by width/height). */
-function buildSeries(frames, aspect) {
+function buildSeries(frames, aspect, smoothN) {
   const n = frames.length;
   const series = {};
   const vis = {};
@@ -18,7 +18,7 @@ function buildSeries(frames, aspect) {
       const p = f.lm && f.lm[idx];
       if (p) { xs[i] = p.x * aspect; ys[i] = p.y; vs[i] = p.v ?? 1; }
     });
-    const sx = smoothSeries(fillGaps(xs), 5), sy = smoothSeries(fillGaps(ys), 5);
+    const sx = smoothSeries(fillGaps(xs), smoothN), sy = smoothSeries(fillGaps(ys), smoothN);
     series[name] = sx.map((x, i) => ({ x, y: sy[i] }));
     vis[name] = vs;
   }
@@ -47,8 +47,10 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const n = frames.length;
   if (n < fps) return { ok: false, error: 'too-short' };
   const ranges = config.moves.shooting.ranges;
-  const { series: S, vis } = buildSeries(frames, aspect);
   const rate = (sec) => Math.max(1, Math.round(sec * fps));
+  // Windows are defined in time (not frames) so 30 fps and 60 fps analysis agree.
+  const smoothN = Math.max(3, 2 * Math.round(rate(1 / 12) / 2) + 1);
+  const { series: S, vis } = buildSeries(frames, aspect, smoothN);
 
   // ---- Handedness: the wrist that gets highest above its shoulder is the shooting hand.
   const rise = (side) => S[side + 'Shoulder'].map((s, i) => s.y - S[side + 'Wrist'][i].y); // >0 = wrist above shoulder
@@ -131,7 +133,7 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const armNames = [side === 'r' ? 'rShoulder' : 'lShoulder', side === 'r' ? 'rElbow' : 'lElbow', side === 'r' ? 'rWrist' : 'lWrist'];
 
   // 1. Release angle: direction of wrist travel over the last ~4 frames before release.
-  const a = Math.max(0, release - 4);
+  const a = Math.max(0, release - Math.max(2, rate(0.066)));
   const vx = (wr[release].x - wr[a].x) * facing, vy = wr[a].y - wr[release].y;
   add('releaseAngle', deg(Math.atan2(vy, vx)), 'deg', release, [armNames[2]], a, release);
 

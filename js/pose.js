@@ -84,6 +84,9 @@ function brightnessOf(ctx, w, h) {
   for (let i = 0; i < d.length; i += 64) { sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; n++; }
   return sum / n;
 }
+/** Warm up the WASM runtime and model in the background so "Analyse" doesn't wait for it. */
+export function preloadPose(cfg) { loadPose(cfg).catch(() => {}); }
+
 const toLm = (arr) => arr.map((p) => ({ x: p.x, y: p.y, z: p.z, v: p.visibility ?? 1 }));
 
 /** Cheap probe on a few evenly spaced frames, used for the quality pre-check before heavy processing. */
@@ -104,23 +107,31 @@ export async function probeClip(video, { start, duration, samples = 8 }, cfg) {
   return { per, times, brightness: br.reduce((a, b) => a + b, 0) / br.length };
 }
 
-/** Full pass: step through the clip at `fps`, run pose on each frame. */
+/**
+ * Full pass: step through the clip at `fps`, run pose on each frame.
+ * Speed: the seek for frame i+1 is started *before* pose inference runs on frame i, so the video decoder
+ * works while the (synchronous) model call blocks the main thread. Seek latency is the main cost on iOS.
+ */
 export async function processClip(video, { start, duration, fps }, cfg, onProgress) {
   const lm = await loadPose(cfg);
   await lm.setOptions({ runningMode: 'VIDEO' });
   const canvas = document.createElement('canvas');
   const n = Math.floor(duration * fps);
   const per = [], times = [];
+  const t0 = performance.now();
+  await seek(video, start);
   for (let i = 0; i < n; i++) {
-    const t = start + i / fps;
-    await seek(video, t);
-    drawFrame(video, canvas, 720);
+    drawFrame(video, canvas, 512);
+    const next = i + 1 < n ? seek(video, start + (i + 1) / fps) : null;
     videoStamp += 1000 / fps;
     const res = lm.detectForVideo(canvas, videoStamp);
     per.push(res.landmarks.map(toLm)); times.push(i / fps);
-    if (i % 3 === 0) { onProgress && onProgress((i + 1) / n); await new Promise((r) => setTimeout(r)); }
+    if (onProgress) {
+      const done = i + 1, elapsed = (performance.now() - t0) / 1000;
+      onProgress(done / n, { done, total: n, etaSec: done > 4 ? (elapsed / done) * (n - done) : null });
+    }
+    if (next) await next; else await new Promise((r) => setTimeout(r));
   }
-  onProgress && onProgress(1);
   return { per, times, aspect: video.videoWidth / video.videoHeight };
 }
 

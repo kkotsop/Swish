@@ -1,5 +1,5 @@
 // Service worker: app shell works offline. Bump VERSION when you change app files.
-const VERSION = 'swish-v2';
+const VERSION = 'swish-v3';
 const SHELL = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'swish-icons/icon-192.png', 'swish-icons/apple-touch-icon.png',
   'js/app.js', 'js/ui.js', 'js/store.js', 'js/moves.js', 'js/pose.js', 'js/capture.js', 'js/skeleton.js', 'js/report.js', 'js/progress.js',
   'js/guide.js', 'js/analyze.js', 'js/mathutil.js', 'js/shooting.js', 'js/precheck.js', 'js/coaching.js', 'config/settings.json'];
