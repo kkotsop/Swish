@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Swish calibration</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body { position: static; overflow: auto; } #app { position: static; }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 60px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; } th, td { padding: 6px 8px; border-bottom: 1px solid #2a2a36; text-align: right; }
+    th:first-child, td:first-child { text-align: left; } pre { background: #17171f; padding: 14px; border-radius: 14px; overflow: auto; font-size: 13px; }
+    .btn { display: inline-block; width: auto; padding: 12px 20px; margin: 6px 6px 6px 0; font-size: 15px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Swish calibration</h1>
+  <p>Offline mode: runs the <b>same</b> pose + metric code as the app on your reference clips (suggested: 2 clips from each of 4 players, clean side-on, 60 fps or higher, portrait) and proposes ranges = observed range plus a buffer. Nothing is uploaded; it all runs in this page.</p>
+  <input id="files" type="file" accept="video/*" multiple>
+  <p>Each clip is analysed from <input id="start" type="number" value="0" min="0" step="0.5" style="width:70px"> s for up to <b>5 s</b>.</p>
+  <button class="btn" id="run" disabled>Analyse clips</button>
+  <p id="status"></p>
+  <table id="table"></table>
+  <h2 style="margin-top:24px">Proposed ranges</h2>
+  <p>Copy into <code>config/settings.json</code> under <code>moves.shooting.ranges</code> (or download and replace). Edit freely afterwards.</p>
+  <pre id="out">Run the analysis first.</pre>
+  <button class="btn alt" id="dl" disabled>Download ranges.json</button>
+</div>
+<script type="module">
+import { makeVideo, whenReady, measureFps, processClip } from '../js/pose.js';
+import { selectSubject } from '../js/precheck.js';
+import { analyzeShooting, SHOOTING_METRICS } from '../js/shooting.js';
+import { rangesFromClips } from '../js/calibrate.js';
+const $ = (id) => document.getElementById(id);
+const config = await (await fetch('../config/settings.json')).json();
+$('files').addEventListener('change', () => { $('run').disabled = !$('files').files.length; });
+let ranges = null;
+$('run').addEventListener('click', async () => {
+  const rows = [], results = [];
+  $('run').disabled = true;
+  for (const [i, f] of [...$('files').files].entries()) {
+    $('status').textContent = `Clip ${i + 1}/${$('files').files.length}: ${f.name}…`;
+    const v = makeVideo(f); await whenReady(v);
+    const fps = await measureFps(v);
+    const start = +$('start').value || 0;
+    const duration = Math.min(config.clipSeconds, v.duration - start);
+    const use = Math.min(config.analysisFps, Math.round(fps || config.analysisFps));
+    const pass = await processClip(v, { start, duration, fps: use }, config, (p) => { $('status').textContent = `Clip ${i + 1}: ${Math.round(p * 100)}%`; });
+    const sub = selectSubject(pass.per, pass.times, config);
+    const r = analyzeShooting(sub.frames, { aspect: pass.aspect, fps: use, config });
+    results.push(r); rows.push({ name: f.name, fps, r });
+  }
+  const head = `<tr><th>Clip</th><th>fps</th><th>hand</th>${SHOOTING_METRICS.map((m) => `<th>${m}</th>`).join('')}</tr>`;
+  $('table').innerHTML = head + rows.map(({ name, fps, r }) => r.ok
+    ? `<tr><td>${name}</td><td>${fps ? fps.toFixed(0) : '?'}</td><td>${r.hand}</td>${SHOOTING_METRICS.map((m) => `<td>${r.metrics[m].value.toFixed(2)}</td>`).join('')}</tr>`
+    : `<tr><td>${name}</td><td colspan="${SHOOTING_METRICS.length + 2}">no shot found (${r.error})</td></tr>`).join('');
+  ranges = rangesFromClips(results, SHOOTING_METRICS);
+  $('out').textContent = JSON.stringify(ranges, null, 2);
+  $('dl').disabled = false; $('run').disabled = false; $('status').textContent = 'Done.';
+});
+$('dl').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(ranges, null, 2)], { type: 'application/json' }));
+  a.download = 'ranges.json'; a.click();
+});
+</script>
+</body>
+</html>

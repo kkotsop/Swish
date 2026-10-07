@@ -1,0 +1,35 @@
+{
+  "_readme": "Editable settings. Weights and ranges can be changed without rebuilding. Ranges for 'shooting' are PLACEHOLDERS until you run tools/calibrate.html on your reference clips and paste the result here. For each metric: good = [min,max] is the ideal range; tolerance = how far outside 'good' still counts as borderline.",
+  "analysisFps": 60,
+  "clipSeconds": 5,
+  "minFps": 60,
+  "quality": {
+    "minPersonFrames": 0.6,
+    "minBrightness": 45,
+    "secondPersonSizeRatio": 0.55,
+    "secondPersonCentralBand": [0.25, 0.75],
+    "secondPersonFrameShare": 0.25
+  },
+  "llm": {
+    "proxyUrl": "",
+    "timeoutMs": 6000
+  },
+  "moves": {
+    "shooting": {
+      "weights": {
+        "releaseAngle": 1, "forwardDrift": 1, "elbowAngle": 1, "kneeDip": 1,
+        "elbowAlignment": 1, "releaseHeight": 1, "followThrough": 1, "tempo": 1
+      },
+      "ranges": {
+        "releaseAngle":   { "good": [45, 55],   "tolerance": 10 },
+        "forwardDrift":   { "good": [0, 0.25],  "tolerance": 0.2 },
+        "elbowAngle":     { "good": [80, 100],  "tolerance": 15 },
+        "kneeDip":        { "good": [25, 55],   "tolerance": 12 },
+        "elbowAlignment": { "good": [0, 12],    "tolerance": 10 },
+        "releaseHeight":  { "good": [1.05, 1.35], "tolerance": 0.12 },
+        "followThrough":  { "good": [50, 110],  "tolerance": 20 },
+        "tempo":          { "good": [0.6, 1.2], "tolerance": 0.3 }
+      }
+    }
+  }
+}
