@@ -101,3 +101,68 @@ export function makeShot(opts = {}) {
   const r = Math.round(o.releaseT * o.fps);
   return { frames, opts: o, releaseFrame: r, setFrame: Math.round(setT * o.fps), bottomFrame: Math.round(o.dipEnd * o.fps), truth };
 }
+
+/** Front-on synthetic shooter (camera faces the player). Shoulders are wide in the image. */
+export function makeFrontShot(opts = {}) {
+  const o = {
+    fps: 60, seconds: 5, rightHanded: true, kneeFlex: 40, setTilt: 5, drift: 0.05, jumpHeight: 0.06,
+    dipStart: 1.0, dipEnd: 1.4, riseEnd: 1.65, releaseT: 1.75, landT: 2.15, guideMode: 'near', ...opts,
+  };
+  const s = 0.12, t = 0.13, torso = 0.17, U = 0.1, Fa = 0.1, y0 = 0.85, x0 = 0.5 * ASPECT;
+  const n = Math.round(o.fps * o.seconds);
+  const frames = [];
+  const setT = o.releaseT - 0.2;
+  const f = (d) => (d * Math.PI) / 180;
+  const side = o.rightHanded ? -1 : 1; // shooting shoulder is on this side of the image
+  for (let i = 0; i < n; i++) {
+    const tt = i / o.fps;
+    let F = 5;
+    if (tt >= o.dipStart && tt < o.dipEnd) F = lerp(5, o.kneeFlex, sstep((tt - o.dipStart) / (o.dipEnd - o.dipStart)));
+    else if (tt >= o.dipEnd && tt < o.riseEnd) F = lerp(o.kneeFlex, 2, sstep((tt - o.dipEnd) / (o.riseEnd - o.dipEnd)));
+    else if (tt >= o.riseEnd) F = 2;
+    const leg = legHeight(F, s, t);
+    const jt = (tt - o.riseEnd) / (o.landT - o.riseEnd);
+    const lift = jt > 0 && jt < 1 ? o.jumpHeight * Math.sin(Math.PI * jt) : 0;
+    const cx = x0 + o.drift * s * sstep(jt), ay = y0 - lift;
+    const hip = { y: ay - leg.h }, shoY = hip.y - torso;
+    const sho = { x: cx + side * 0.07, y: shoY }, gsho = { x: cx - side * 0.07, y: shoY };
+    const low = { x: sho.x, y: shoY + 0.12 };
+    const elbowSet = { x: sho.x + side * 0.0, y: shoY + 0.03 };
+    const wristSet = { x: elbowSet.x + side * 0.1 * Math.sin(f(o.setTilt)), y: elbowSet.y - 0.1 * Math.cos(f(o.setTilt)) };
+    const wristRel = { x: sho.x, y: shoY - (U + Fa) * 0.98 };
+    let wrist, elbow;
+    if (tt < o.dipEnd) {
+      const u = tt > o.dipStart ? sstep((tt - o.dipStart) / (o.dipEnd - o.dipStart)) : 0;
+      wrist = { x: lerp(low.x, wristSet.x, u), y: lerp(low.y, wristSet.y, u) };
+      elbow = { x: lerp(sho.x, elbowSet.x, u), y: lerp(shoY + 0.08, elbowSet.y, u) };
+    } else if (tt < setT) { wrist = wristSet; elbow = elbowSet; }
+    else if (tt <= o.releaseT) {
+      const u = sstep((tt - setT) / (o.releaseT - setT));
+      wrist = { x: lerp(wristSet.x, wristRel.x, u), y: lerp(wristSet.y, wristRel.y, u) };
+      elbow = { x: lerp(elbowSet.x, (sho.x + wrist.x) / 2, u), y: lerp(elbowSet.y, (shoY + wrist.y) / 2, u) };
+    } else {
+      const u = sstep((tt - o.releaseT) / 0.25);
+      wrist = { x: wristRel.x, y: lerp(wristRel.y, wristRel.y + 0.05, u) };
+      elbow = { x: sho.x, y: (shoY + wrist.y) / 2 };
+    }
+    const index = { x: wrist.x, y: wrist.y - 0.04 };
+    const holding = tt >= o.dipEnd && tt <= o.releaseT + 0.03;
+    const gWrist = o.guideMode === 'near' && holding ? { x: wrist.x - side * 0.06, y: wrist.y + 0.03 } : { x: gsho.x, y: shoY + 0.12 };
+    const gElbow = { x: gsho.x, y: shoY + 0.08 };
+    const lm = new Array(33).fill(null).map(() => ({ x: 0, y: 0, z: 0, v: 0.95 }));
+    const put = (idx, p) => { lm[idx] = { x: p.x / ASPECT, y: p.y, z: 0, v: 0.95 }; };
+    const R = o.rightHanded;
+    put(0, { x: cx, y: shoY - 0.09 }); put(7, { x: cx - 0.03, y: shoY - 0.085 }); put(8, { x: cx + 0.03, y: shoY - 0.085 });
+    put(R ? 12 : 11, sho); put(R ? 11 : 12, gsho);
+    put(R ? 14 : 13, elbow); put(R ? 13 : 14, gElbow);
+    put(R ? 16 : 15, wrist); put(R ? 15 : 16, gWrist);
+    put(R ? 20 : 19, index); put(R ? 19 : 20, { x: gWrist.x, y: gWrist.y - 0.03 });
+    put(23, { x: cx - 0.035, y: hip.y }); put(24, { x: cx + 0.035, y: hip.y });
+    const kneeY = (hip.y + ay) / 2;
+    put(25, { x: cx - 0.045, y: kneeY }); put(26, { x: cx + 0.045, y: kneeY });
+    put(27, { x: cx - 0.04, y: ay }); put(28, { x: cx + 0.04, y: ay });
+    put(31, { x: cx - 0.04, y: ay + 0.01 }); put(32, { x: cx + 0.04, y: ay + 0.01 });
+    frames.push({ t: tt, lm });
+  }
+  return { frames, opts: o, releaseFrame: Math.round(o.releaseT * o.fps) };
+}

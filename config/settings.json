@@ -20,7 +20,7 @@
     "shooting": {
       "weights": {
         "releaseAngle": 1, "forwardDrift": 1, "elbowAngle": 1, "kneeDip": 1,
-        "elbowAlignment": 1, "releaseHeight": 1, "followThrough": 1, "tempo": 1, "guideHand": 1
+        "elbowAlignment": 1, "sideDrift": 1, "releaseHeight": 1, "followThrough": 1, "tempo": 1, "guideHand": 1
       },
       "ranges": {
         "releaseAngle":   { "good": [45, 55],   "tolerance": 10 },
@@ -29,7 +29,8 @@
         "kneeDip":        { "good": [25, 55],   "tolerance": 12 },
         "elbowAlignment": { "good": [0, 12],    "tolerance": 10 },
         "releaseHeight":  { "good": [1.05, 1.35], "tolerance": 0.12 },
-        "followThrough":  { "good": [50, 110],  "tolerance": 20 },
+        "sideDrift":      { "good": [0, 0.2],   "tolerance": 0.2 },
+        "followThrough":  { "good": [40, 90],   "tolerance": 20 },
         "tempo":          { "good": [0.6, 1.2], "tolerance": 0.3 },
         "guideHand":      { "good": [0, 1.4],   "tolerance": 0.7 }
       }

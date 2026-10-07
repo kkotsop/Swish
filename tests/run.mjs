@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { analyzeShooting, headlineScore, scoreValue } from '../js/shooting.js';
-import { makeShot, ASPECT } from './synth.js';
+import { analyzeShooting, headlineScore, scoreValue, SIDE_METRICS, FRONT_METRICS } from '../js/shooting.js';
+import { makeShot, makeFrontShot, ASPECT } from './synth.js';
 import { selectSubject, checkTracking, checkOrientation, checkFps, poseBox } from '../js/precheck.js';
 import { rangeFromValues, rangesFromClips } from '../js/calibrate.js';
-import { templateAdvice, personalisedAdvice } from '../js/coaching.js';
+import { templateAdvice, personalisedAdvice, summarize } from '../js/coaching.js';
 
 const config = JSON.parse(fs.readFileSync(new URL('../config/settings.json', import.meta.url)));
 const run = (o) => { const s = makeShot(o); return { s, r: analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config }) }; };
@@ -23,7 +23,8 @@ test('right-handed shot: phases, hand, direct metrics', () => {
   near(r.metrics.elbowAngle.value, 90, 8, 'elbow at set');
   near(r.metrics.tempo.value, 1.75 - 1.0, 0.12, 'tempo');
   near(r.metrics.forwardDrift.value, 0.1, 0.05, 'drift');
-  assert.equal(Object.keys(r.metrics).length, 9);
+  assert.equal(r.view, 'side');
+  assert.deepEqual(Object.keys(r.metrics).sort(), [...SIDE_METRICS].sort());
   assert.equal(r.metrics.followThrough.status, 'good');
   const sc = headlineScore(r.metrics, config.moves.shooting.weights);
   assert.ok(sc > 0 && sc <= 100);
@@ -67,7 +68,7 @@ test('release angle is never negative and elbow-at-set is a real bent elbow', ()
   for (const o of [{}, { releaseDirDeg: 20 }, { releaseDirDeg: 80 }, { rightHanded: false, mirror: true }, { fps: 30 }]) {
     const { r } = run(o.fps ? {} : o);
     const rr = o.fps ? analyzeShooting(makeShot(o).frames, { aspect: ASPECT, fps: o.fps, config }) : r;
-    assert.ok(rr.metrics.releaseAngle.value > 0 && rr.metrics.releaseAngle.value < 180, `release angle ${rr.metrics.releaseAngle.value}`);
+    assert.ok(rr.metrics.releaseAngle.value > 0 && rr.metrics.releaseAngle.value <= 90, `release angle ${rr.metrics.releaseAngle.value}`);
     assert.ok(rr.metrics.elbowAngle.value < 110, `elbow ${rr.metrics.elbowAngle.value}`);
   }
 });
@@ -102,6 +103,41 @@ test('guide hand: near the ball is good, hanging low is flagged', () => {
   assert.ok(low.metrics.guideHand.value > near_.metrics.guideHand.value + 0.8, `${low.metrics.guideHand.value} vs ${near_.metrics.guideHand.value}`);
   assert.notEqual(low.metrics.guideHand.status, 'good');
   assert.equal(near_.guideHand, 'left'); // right-handed shooter -> off hand is the left
+});
+
+test('front view is detected and measures only what it can (elbow alignment, off hand, ...)', () => {
+  const good = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
+  assert.ok(good.ok, JSON.stringify(good)); assert.equal(good.view, 'front');
+  assert.deepEqual(Object.keys(good.metrics).sort(), [...FRONT_METRICS].sort());
+  assert.ok(good.metrics.elbowAlignment.value < 12, `alignment ${good.metrics.elbowAlignment.value}`);
+  assert.equal(good.metrics.guideHand.status, 'good');
+  assert.ok(good.metrics.sideDrift.value < 0.2);
+  const flared = analyzeShooting(makeFrontShot({ setTilt: 40 }).frames, { aspect: ASPECT, fps: 60, config });
+  assert.ok(flared.metrics.elbowAlignment.value > good.metrics.elbowAlignment.value + 15, `${flared.metrics.elbowAlignment.value}`);
+  const lefty = analyzeShooting(makeFrontShot({ rightHanded: false }).frames, { aspect: ASPECT, fps: 60, config });
+  assert.equal(lefty.hand, 'left'); assert.equal(lefty.view, 'front');
+  const rh = good.metrics.releaseHeight.value;
+  assert.ok(rh > 0.9 && rh < 1.6, `release height ${rh}`);
+});
+
+test('static front pose with raised arms is not a shot', () => {
+  const sh = makeFrontShot({});
+  for (const f of sh.frames) { const S = f.lm[12]; f.lm[14] = { ...S, y: S.y - 0.1 }; f.lm[16] = { ...S, y: S.y - 0.2 }; f.lm[20] = { ...S, y: S.y - 0.24 }; }
+  assert.equal(analyzeShooting(sh.frames, { aspect: ASPECT, fps: 60, config }).ok, false);
+});
+
+test('follow-through is good from 40 degrees; release height measured where the ball leaves the hand', () => {
+  const { s, r } = run({ followBeta: 45 });
+  assert.equal(r.metrics.followThrough.status, 'good', `${r.metrics.followThrough.value}`);
+  near(r.phases.release, s.releaseFrame, 8, 'ball release frame near the arm extension');
+  const weak = run({ followBeta: 10 }).r;
+  assert.notEqual(weak.metrics.followThrough.status, 'good');
+});
+
+test('quick summary: meaning, what works, next step', () => {
+  const { r } = run({ releaseDirDeg: 25 });
+  const sm = summarize('shooting', r.metrics, headlineScore(r.metrics, config.moves.shooting.weights));
+  assert.ok(sm.meaning.length > 10 && /Working well|Nothing is in the green/.test(sm.works) && /^Next: /.test(sm.next));
 });
 
 test('no shot in a standing clip is reported', () => {

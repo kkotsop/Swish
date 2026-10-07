@@ -1,7 +1,7 @@
 // Orchestrates one analysis run: pre-check -> pose -> isolate shot -> metrics -> key frames -> advice.
 import { checkFps, checkOrientation, checkTracking, selectSubject, MESSAGES } from './precheck.js';
 import { grabFrame, processClip } from './pose.js';
-import { personalisedAdvice } from './coaching.js';
+import { personalisedAdvice, summarize } from './coaching.js';
 
 /** clip: { video, start, duration, fps, source:'record'|'upload' } -> { ok, result } | { ok:false, message } */
 export async function runAnalysis({ clip, move, config, onStatus, onProgress, onPreview }) {
@@ -24,9 +24,17 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
     if (per.every((p) => !p.length)) return MESSAGES.noPerson;
     return null;
   };
+  // Keep small stills of every 2nd frame so the report can replay the tracked shot like a short GIF.
+  const small = document.createElement('canvas');
+  const replayFrames = [];
+  const onSample = (canvas, i) => {
+    small.width = 240; small.height = Math.round((240 * canvas.height) / canvas.width);
+    small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+    replayFrames.push({ i, src: small.toDataURL('image/jpeg', 0.55) });
+  };
   let pass;
   try {
-    pass = await processClip(video, { start: clip.start, duration: clip.duration, fps }, config, (p, info) => { onStatus('Tracking your body…'); onProgress(p, info); }, { earlyCheck, onPreview });
+    pass = await processClip(video, { start: clip.start, duration: clip.duration, fps }, config, (p, info) => { onStatus('Tracking your body…'); onProgress(p, info); }, { earlyCheck, onPreview, onSample });
   } catch (e) {
     if (e.early) return fail(e.message);
     throw e;
@@ -53,5 +61,6 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
     }
   }
   const advice = await personalisedAdvice(move.id, analysis.metrics, ranges, config);
-  return { ok: true, result: { move: move.id, ts: Date.now(), hand: analysis.hand, handAmbiguous: analysis.handAmbiguous, score, metrics: analysis.metrics, stills, advice, ranges, warnings } };
+  const replay = { fps: fps / 2, aspect: pass.aspect, frames: replayFrames.map((f) => ({ src: f.src, lm: subject.frames[f.i]?.lm || null })) };
+  return { ok: true, result: { move: move.id, ts: Date.now(), hand: analysis.hand, handAmbiguous: analysis.handAmbiguous, score, metrics: analysis.metrics, metricIds: analysis.metricIds, view: analysis.view, summary: summarize(move.id, analysis.metrics, score), replay, stills, advice, ranges, warnings } };
 }
