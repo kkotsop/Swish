@@ -4,7 +4,7 @@ import { COPY } from './coaching.js';
 
 export const MOVES = {
   shooting: {
-    id: 'shooting', name: 'Shooting form', blurb: 'Film from the side or front', orientation: 'portrait', available: true,
+    id: 'shooting', name: 'Shooting form', blurb: 'Film from the side or front', glyph: 'shoot', orientation: 'portrait', available: true,
     metrics: SHOOTING_METRICS, copy: COPY.shooting, analyze: analyzeShooting, headline: headlineScore,
     guide: {
       orientation: 'portrait', title: 'Where to film',
@@ -14,6 +14,8 @@ export const MOVES = {
       },
     },
   },
-  layup: { id: 'layup', name: 'Layups', blurb: 'Coming soon', available: false },
-  jab: { id: 'jab', name: 'Jab step', blurb: 'Coming soon (landscape)', available: false, orientation: 'landscape' },
+  jab: { id: 'jab', name: 'Jab step', blurb: 'Coming soon', glyph: 'jab', available: false, orientation: 'landscape' },
+  layupLeft: { id: 'layupLeft', name: 'Layup, left', blurb: 'Coming soon', glyph: 'layup', available: false },
+  layupRight: { id: 'layupRight', name: 'Layup, right', blurb: 'Coming soon', glyph: 'layup', flip: true, available: false },
+  crossover: { id: 'crossover', name: 'Crossover', blurb: 'Coming soon', glyph: 'cross', available: false },
 };

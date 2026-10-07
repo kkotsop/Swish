@@ -134,7 +134,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
 export async function grabFrame(video, t) {
   await seek(video, t);
   const canvas = document.createElement('canvas');
-  const s = Math.min(1, 540 / video.videoWidth);
+  const s = Math.min(1, 960 / video.videoWidth);
   canvas.width = Math.round(video.videoWidth * s); canvas.height = Math.round(video.videoHeight * s);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', 0.85);
