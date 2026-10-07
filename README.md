@@ -1,1 +1,74 @@
-# Swish
+# Swish 🏀
+
+A personal iPhone web app (PWA) that analyses a short basketball clip and returns a Stories-style technique report. v1 covers **shooting form**; more moves plug in as "move profiles" on the same pipeline.
+
+Pose analysis runs **on the phone** (MediaPipe Pose, WASM). No server, no per-use cost, and video never leaves the device or gets stored.
+
+See the product spec this was built from: [`SWISH_SPEC.md`](SWISH_SPEC.md) (§ numbers below refer to it).
+
+## Run it on your iPhone
+
+Camera access needs **HTTPS**, so the easiest route is GitHub Pages:
+
+1. Merge to `main`. In the repo go to **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. The *Deploy to GitHub Pages* workflow runs the tests and publishes the site (about 1 minute). Your URL is `https://<user>.github.io/Swish/`.
+3. Open that URL in **Safari** on the iPhone → **Share → Add to Home Screen**. Launch Swish from the home screen icon.
+4. First launch: allow the camera. (If you tapped *Don't Allow*: Settings → Apps → Safari → Camera, or delete and re-add the home-screen app.)
+
+Run locally on a computer (camera works on `localhost`):
+
+```bash
+python3 -m http.server 8000      # then open http://localhost:8000
+node tests/run.mjs               # unit tests (no dependencies)
+```
+
+## Using it
+
+Profile → move → camera guide (Skip any time) → **Record** (3/5/10 s countdown with beeps, 5 s clip) or **Upload** (from Photos, then trim to ≤ 5 s) → quality pre-check → analysis (≈5–15 s) → swipeable report. The score is saved to the profile; **Progress** shows per-metric trends.
+
+Filming tips: phone upright (portrait) at hip height about 3 m away, shooter side-on, whole body in frame, good light, nobody else in the shot. Clips must be **60 fps or higher** (iPhone: Settings → Camera → Record Video → 1080p HD at 60 fps, or use slow-mo 120/240 fps and upload).
+
+## What's where
+
+| Path | Purpose |
+|---|---|
+| `js/shooting.js` | Shot isolation (load → set → release → landing), auto handedness, the 8 metrics, scoring |
+| `js/precheck.js` | Quality checks with specific messages; main-subject selection and the multiple-people rule |
+| `js/pose.js` | MediaPipe wrapper, frame stepping, fps measurement, key-frame grabs |
+| `js/capture.js` | Camera, countdown/beeps, fixed-length recording |
+| `js/report.js`, `js/skeleton.js` | Stories report, skeleton overlay with shooting arm highlighted |
+| `js/coaching.js` | What / why / how-to-improve copy and personalised advice (template + optional LLM) |
+| `js/store.js`, `js/progress.js` | Local storage (profiles, scores only) and progress charts |
+| `config/settings.json` | **Editable** reference ranges, metric weights, quality thresholds, LLM proxy URL |
+| `tools/calibrate.html` | Offline reference-calibration mode (below) |
+| `proxy/worker.js` | Optional Cloudflare Worker that keeps the Groq key off the phone |
+| `vendor/`, `models/` | MediaPipe runtime + pose model, bundled so the app works offline |
+| `tests/` | Synthetic-shooter tests for the analysis |
+
+## Tuning
+
+**Weights and ranges** live in `config/settings.json` and take effect on reload, with no rebuild. Bump `VERSION` in `sw.js` only if you change app code. Each range is `good: [min, max]` plus a `tolerance` (how far outside still counts as *borderline*). Metric score = 100 inside the range, 50 at the edge of the tolerance, 0 at twice that.
+
+**Reference calibration (§6).** The shipped ranges are textbook **placeholders**. To replace them:
+
+1. Serve the app (`python3 -m http.server 8000`) and open `http://localhost:8000/tools/calibrate.html`.
+2. Select ~8 reference clips (2 clips × 4 players, side-on, ≥ 60 fps, portrait).
+3. It runs the same pose + metric code, shows each clip's values and proposes ranges = observed range + buffer.
+4. Paste the JSON into `moves.shooting.ranges` in `config/settings.json`.
+
+**Personalised advice (§2).** Out of the box the advice is template sentences with your numbers (works offline). To use a small LLM instead, deploy `proxy/worker.js` (instructions at the top of the file; the Groq key is a Worker secret, never in client code) and set `llm.proxyUrl`. Only metric numbers are sent. If the proxy fails, the app silently falls back to templates.
+
+## Metrics (shooting, equal weight by default)
+
+Release angle · Forward drift/balance · Elbow angle at set · Knee dip · Elbow alignment · Release height · Follow-through · Shot tempo. Each has a status (good / borderline / needs work), a value, and a high/medium/low tracking-confidence dot from landmark visibility.
+
+## Known limits and things to check on a real iPhone
+
+- **Placeholder ranges** until you calibrate; treat early scores as relative, not absolute.
+- Side-on only: elbow *flare* toward the camera can't be seen in 2D, so *Elbow alignment* measures forearm tilt from vertical instead.
+- Ball tracking is approximated from the wrist, as per the spec.
+- Shot isolation scores the **highest** wrist peak in the clip; if you shoot several times in one clip, the best-extended one is used.
+- Frame rate is measured by playing the clip (needs Safari 15.4+); if it can't be measured the check is skipped. Variable-frame-rate slow-mo clips can report odd numbers; if a valid clip is rejected, re-export it at a fixed rate.
+- Recorded clips use the camera's reported frame rate. Most iPhones give 60 fps in Safari when asked; if yours reports 30 you'll get a clear message.
+- Analysis steps through the clip by seeking, then runs the pose model per frame. On older phones it may take longer than 15 s.
+- Saved data lives in the browser's local storage on that phone/profile. Clearing Safari data or removing the app erases history (cloud sync is the spec's phase 2).
