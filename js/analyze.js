@@ -10,8 +10,9 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress }) 
   const fail = (message) => ({ ok: false, message });
 
   onStatus('Checking your clip…');
-  const fpsMsg = clip.fps ? checkFps(clip.fps, config) : null;
-  if (fpsMsg) return fail(fpsMsg);
+  const fpsCheck = clip.fps ? checkFps(clip.fps, config) : null;
+  if (fpsCheck && fpsCheck.level === 'block') return fail(fpsCheck.message);
+  const warnings = fpsCheck ? [fpsCheck.message] : [];
   const oriMsg = checkOrientation(video.videoWidth, video.videoHeight, move.orientation);
   if (oriMsg) return fail(oriMsg);
   if (clip.duration < 1.5) return fail(MESSAGES.tooShort);
@@ -42,6 +43,11 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress }) 
   for (const idx of needed) {
     stills[idx] = { src: await grabFrame(video, clip.start + idx / fps), lm: subject.frames[idx]?.lm || null };
   }
+  if (fpsCheck) { // timing-sensitive metrics are less trustworthy at low frame rates
+    for (const id of ['releaseAngle', 'followThrough', 'tempo']) {
+      if (analysis.metrics[id].confidence === 'high') analysis.metrics[id].confidence = 'medium';
+    }
+  }
   const advice = await personalisedAdvice(move.id, analysis.metrics, ranges, config);
-  return { ok: true, result: { move: move.id, ts: Date.now(), hand: analysis.hand, handAmbiguous: analysis.handAmbiguous, score, metrics: analysis.metrics, stills, advice, ranges } };
+  return { ok: true, result: { move: move.id, ts: Date.now(), hand: analysis.hand, handAmbiguous: analysis.handAmbiguous, score, metrics: analysis.metrics, stills, advice, ranges, warnings } };
 }

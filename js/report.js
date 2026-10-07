@@ -64,6 +64,7 @@ export function renderReport({ result, move, profile, actions }) {
   slides.push(h('section', { class: 'slide' },
     h('div', { class: 'row' }, h('span', { class: 'pill' }, move.name), h('span', { class: 'pill hand' }, result.handAmbiguous ? 'Hand unclear' : `${result.hand === 'right' ? 'Right' : 'Left'} hand`), h('span', { class: 'spacer' }), h('span', { class: 'pill' }, profile.name)),
     h('div', { class: 'score-row' }, h('div', { class: 'score' }, String(result.score)), h('p', { style: { margin: '0 0 8px', fontWeight: 800 } }, 'Form score\nout of 100')),
+    ...(result.warnings || []).map((w) => h('div', { class: 'card', style: { borderLeft: '6px solid var(--warn)', padding: '10px 14px' } }, h('b', {}, 'Heads up: '), w)),
     result.handAmbiguous ? h('p', {}, 'We could not tell for sure which hand is your shooting hand in this clip, so treat the arm metrics with care.') : null,
     h('div', { class: 'chips' }, chips),
     h('p', { style: { textAlign: 'center', marginTop: '4px' } }, 'Tap a card for details · swipe for fixes ›')));

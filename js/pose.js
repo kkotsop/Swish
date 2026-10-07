@@ -3,6 +3,9 @@ import { PoseLandmarker, FilesetResolver } from '../vendor/mediapipe/vision_bund
 
 let landmarker = null;
 let loading = null;
+// MediaPipe VIDEO mode needs strictly increasing timestamps for the lifetime of the landmarker, so this
+// counter must keep growing across clips (restarting at 0 breaks the 2nd video analysed in a session).
+let videoStamp = 0;
 const WASM = new URL('../vendor/mediapipe/wasm', import.meta.url).href;
 const MODEL = new URL('../models/pose_landmarker_full.task', import.meta.url).href;
 
@@ -108,13 +111,12 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   const canvas = document.createElement('canvas');
   const n = Math.floor(duration * fps);
   const per = [], times = [];
-  let stamp = 0;
   for (let i = 0; i < n; i++) {
     const t = start + i / fps;
     await seek(video, t);
     drawFrame(video, canvas, 720);
-    stamp += 1000 / fps;
-    const res = lm.detectForVideo(canvas, stamp);
+    videoStamp += 1000 / fps;
+    const res = lm.detectForVideo(canvas, videoStamp);
     per.push(res.landmarks.map(toLm)); times.push(i / fps);
     if (i % 3 === 0) { onProgress && onProgress((i + 1) / n); await new Promise((r) => setTimeout(r)); }
   }
