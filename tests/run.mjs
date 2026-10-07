@@ -23,6 +23,7 @@ test('right-handed shot: phases, hand, direct metrics', () => {
   near(r.metrics.elbowAngle.value, 90, 8, 'elbow at set');
   near(r.metrics.tempo.value, 1.75 - 1.0, 0.12, 'tempo');
   near(r.metrics.forwardDrift.value, 0.1, 0.05, 'drift');
+  assert.equal(Object.keys(r.metrics).length, 9);
   assert.equal(r.metrics.followThrough.status, 'good');
   const sc = headlineScore(r.metrics, config.moves.shooting.weights);
   assert.ok(sc > 0 && sc <= 100);
@@ -47,6 +48,60 @@ test('deeper dip scores higher flexion; slower shot has longer tempo', () => {
   assert.ok(b.metrics.kneeDip.value > a.metrics.kneeDip.value + 20);
   const slow = run({ dipStart: 0.8, dipEnd: 1.4, riseEnd: 1.9, releaseT: 2.05, landT: 2.4 }).r;
   assert.ok(slow.metrics.tempo.value > run({}).r.metrics.tempo.value + 0.2, `tempo ${slow.metrics.tempo.value}`);
+});
+
+test('30 fps analysis agrees with 60 fps analysis', () => {
+  const hi = run({}).r;
+  const s30 = makeShot({ fps: 30 });
+  const lo = analyzeShooting(s30.frames, { aspect: ASPECT, fps: 30, config });
+  assert.ok(lo.ok); assert.equal(lo.hand, hi.hand);
+  near(lo.metrics.kneeDip.value, hi.metrics.kneeDip.value, 4, 'knee 30 vs 60');
+  near(lo.metrics.elbowAngle.value, hi.metrics.elbowAngle.value, 8, 'elbow 30 vs 60');
+  near(lo.metrics.tempo.value, hi.metrics.tempo.value, 0.15, 'tempo 30 vs 60');
+  near(lo.metrics.forwardDrift.value, hi.metrics.forwardDrift.value, 0.06, 'drift 30 vs 60');
+  near(lo.metrics.releaseAngle.value, hi.metrics.releaseAngle.value, 12, 'release angle 30 vs 60');
+  near(lo.metrics.releaseHeight.value, hi.metrics.releaseHeight.value, 0.05, 'release height 30 vs 60');
+});
+
+test('release angle is never negative and elbow-at-set is a real bent elbow', () => {
+  for (const o of [{}, { releaseDirDeg: 20 }, { releaseDirDeg: 80 }, { rightHanded: false, mirror: true }, { fps: 30 }]) {
+    const { r } = run(o.fps ? {} : o);
+    const rr = o.fps ? analyzeShooting(makeShot(o).frames, { aspect: ASPECT, fps: o.fps, config }) : r;
+    assert.ok(rr.metrics.releaseAngle.value > 0 && rr.metrics.releaseAngle.value < 180, `release angle ${rr.metrics.releaseAngle.value}`);
+    assert.ok(rr.metrics.elbowAngle.value < 110, `elbow ${rr.metrics.elbowAngle.value}`);
+  }
+});
+
+test('arms held straight up with no bend-to-extend is not a shot', () => {
+  const sh = makeShot({});
+  for (const f of sh.frames) { // freeze the right arm straight up for the whole clip
+    const S = f.lm[12];
+    f.lm[14] = { ...S, y: S.y - 0.1 }; f.lm[16] = { ...S, y: S.y - 0.2 }; f.lm[20] = { ...S, y: S.y - 0.24 };
+  }
+  const r = analyzeShooting(sh.frames, { aspect: ASPECT, fps: 60, config });
+  assert.equal(r.ok, false); assert.equal(r.error, 'no-shot');
+});
+
+test('a nearly straight elbow at the set point is never trusted (low confidence)', () => {
+  for (const setElbow of [90, 130, 160, 176]) {
+    const r = run({ setElbow }).r;
+    if (!r.ok) continue;
+    if (r.metrics.elbowAngle.value > 140) assert.equal(r.metrics.elbowAngle.confidence, 'low', `set ${setElbow}`);
+  }
+});
+
+test('knee dip is the deepest bend of the shot', () => {
+  const a = run({ kneeFlex: 55 }).r;
+  near(a.metrics.kneeDip.value, 55, 4, 'knee at lowest point');
+  near(a.phases.bottom, 84, 6, 'bottom frame ~ end of the dip');
+});
+
+test('guide hand: near the ball is good, hanging low is flagged', () => {
+  const near_ = run({ guideMode: 'near' }).r, low = run({ guideMode: 'low' }).r;
+  assert.equal(near_.metrics.guideHand.status, 'good');
+  assert.ok(low.metrics.guideHand.value > near_.metrics.guideHand.value + 0.8, `${low.metrics.guideHand.value} vs ${near_.metrics.guideHand.value}`);
+  assert.notEqual(low.metrics.guideHand.status, 'good');
+  assert.equal(near_.guideHand, 'left'); // right-handed shooter -> off hand is the left
 });
 
 test('no shot in a standing clip is reported', () => {
@@ -76,6 +131,18 @@ test('large central second person triggers the multiple-people warning', () => {
   const per = Array.from({ length: 60 }, () => [person(0.45, 0.6), person(0.6, 0.55)]);
   const sub = selectSubject(per, per.map((_, i) => i / 60), config);
   assert.equal(checkTracking({ subject: sub, total: 60, brightness: 120 }, config).code, 'multiple');
+});
+
+test('false detections (ball/hoop-like poses) are ignored; tiny subject gets a clear message', () => {
+  const flat = Array.from({ length: 33 }, (_, i) => ({ x: 0.5 + (i % 3) * 0.01, y: 0.4 + (i % 2) * 0.01, z: 0, v: 0.9 })); // everything in one spot
+  const sub0 = selectSubject(Array.from({ length: 60 }, () => [flat]), Array.from({ length: 60 }, (_, i) => i / 60), config);
+  assert.equal(sub0.withPerson, 0);
+  const tiny = Array.from({ length: 60 }, () => [person(0.5, 0.25)]);
+  const sub1 = selectSubject(tiny, tiny.map((_, i) => i / 60), config);
+  const c = checkTracking({ subject: sub1, total: 60, brightness: 120 }, config);
+  assert.ok(c && (c.code === 'too-small' || c.code === 'no-person'), JSON.stringify(c));
+  const big = Array.from({ length: 60 }, () => [person(0.5, 0.7)]);
+  assert.equal(checkTracking({ subject: selectSubject(big, big.map((_, i) => i / 60), config), total: 60, brightness: 120 }, config), null);
 });
 
 test('dark, no-person, orientation, fps messages are specific', () => {

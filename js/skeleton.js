@@ -4,16 +4,40 @@ import { LM } from './mathutil.js';
 const BONES = [[11, 12], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28], [27, 31], [28, 32],
   [11, 13], [13, 15], [12, 14], [14, 16], [15, 19], [16, 20]];
 
-export function drawSkeleton(ctx, lm, { w, h, hand, highlight = null }) {
+/** Green rectangle around the tracked person so it is obvious who is being analysed. */
+export function drawPlayerBox(ctx, lm, { w, h, label = true }) {
+  const pts = lm.filter((p) => p && (p.v ?? 1) > 0.3);
+  if (pts.length < 8) return;
+  const pad = 0.04;
+  const x0 = Math.max(0, Math.min(...pts.map((p) => p.x)) - pad) * w, x1 = Math.min(1, Math.max(...pts.map((p) => p.x)) + pad) * w;
+  const y0 = Math.max(0, Math.min(...pts.map((p) => p.y)) - pad) * h, y1 = Math.min(1, Math.max(...pts.map((p) => p.y)) + pad) * h;
+  const lw = Math.max(3, w / 140);
+  ctx.save();
+  ctx.strokeStyle = '#2ee59d'; ctx.lineWidth = lw; ctx.lineJoin = 'round';
+  ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  if (label) {
+    const fs = Math.max(12, w / 28);
+    ctx.font = `900 ${fs}px -apple-system, system-ui, sans-serif`;
+    const tw = ctx.measureText('PLAYER').width + fs * 0.9;
+    const lx = Math.max(0, Math.min(w - tw, x0 - lw / 2)), ly = Math.max(0, y0 - fs * 1.5);
+    ctx.fillStyle = '#2ee59d'; ctx.fillRect(lx, ly, tw, fs * 1.5);
+    ctx.fillStyle = '#04150d'; ctx.textBaseline = 'middle';
+    ctx.fillText('PLAYER', lx + fs * 0.45, ly + fs * 0.75);
+  }
+  ctx.restore();
+}
+
+export function drawSkeleton(ctx, lm, { w, h, hand, highlight = null, box = true }) {
   if (!lm) return;
+  if (box) drawPlayerBox(ctx, lm, { w, h });
   const P = (i) => ({ x: lm[i].x * w, y: lm[i].y * h, v: lm[i].v ?? 1 });
-  const armSet = hand === 'right' ? new Set([12, 14, 16, 20]) : new Set([11, 13, 15, 19]);
+  const armSet = hand === 'right' ? new Set([12, 14, 16, 20]) : hand === 'left' ? new Set([11, 13, 15, 19]) : new Set(); // no hand yet = no highlight
   const lw = Math.max(3, w / 120);
   ctx.lineCap = 'round';
   for (const [a, b] of BONES) {
     const pa = P(a), pb = P(b);
     if (pa.v < 0.3 || pb.v < 0.3) continue;
-    const hot = hand === 'right' ? [[12, 14], [14, 16], [16, 20]] : [[11, 13], [13, 15], [15, 19]];
+    const hot = hand === 'right' ? [[12, 14], [14, 16], [16, 20]] : hand === 'left' ? [[11, 13], [13, 15], [15, 19]] : [];
     const isHot = hot.some(([x, y]) => x === a && y === b);
     ctx.strokeStyle = isHot ? '#ff3d8b' : 'rgba(255,255,255,.85)';
     ctx.lineWidth = isHot ? lw * 1.9 : lw;
@@ -37,6 +61,6 @@ export function focusJoint(metricId, hand) {
   return ({
     releaseAngle: r ? LM.rWrist : LM.lWrist, forwardDrift: LM.rHip, elbowAngle: r ? LM.rElbow : LM.lElbow,
     kneeDip: LM.rKnee, elbowAlignment: r ? LM.rElbow : LM.lElbow, releaseHeight: r ? LM.rWrist : LM.lWrist,
-    followThrough: r ? LM.rIndex : LM.lIndex, tempo: LM.rHip,
+    followThrough: r ? LM.rIndex : LM.lIndex, tempo: LM.rHip, guideHand: r ? LM.lWrist : LM.rWrist,
   })[metricId];
 }

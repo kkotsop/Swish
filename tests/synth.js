@@ -25,7 +25,7 @@ export function makeShot(opts = {}) {
   const o = {
     fps: 60, seconds: 5, mirror: false, rightHanded: true, kneeFlex: 40, setElbow: 90, setTilt: 5,
     releaseDirDeg: 62, drift: 0.1, jumpHeight: 0.06, dipStart: 1.0, dipEnd: 1.4, riseEnd: 1.65,
-    releaseT: 1.75, landT: 2.15, followBeta: 80, releaseReach: 0.28, ...opts,
+    releaseT: 1.75, landT: 2.15, followBeta: 80, releaseReach: 0.28, guideMode: 'near', ...opts,
   };
   const s = 0.12, t = 0.13, torso = 0.17, U = 0.1, Fa = 0.1, y0 = 0.85, x0 = 0.5 * ASPECT;
   const face = o.mirror ? -1 : 1;
@@ -79,7 +79,10 @@ export function makeShot(opts = {}) {
     else elbow = ik(sho, wrist, U, Fa, face > 0 ? 1 : -1);
     const beta = tt > o.releaseT ? lerp(0, o.followBeta, sstep((tt - o.releaseT) / 0.2)) : 0;
     const index = { x: wrist.x + 0.04 * Math.cos(f(beta)) * face, y: wrist.y + 0.04 * Math.sin(f(beta)) };
-    const gWrist = { x: sho.x + 0.03 * face, y: sho.y + 0.06 };
+    const holding = tt >= o.dipEnd && tt <= o.releaseT + 0.03;
+    const gWrist = o.guideMode === 'near' && holding
+      ? { x: wrist.x - 0.03 * face, y: wrist.y + 0.04 }
+      : { x: sho.x + 0.03 * face, y: sho.y + 0.12 };
     const gElbow = { x: sho.x + 0.02 * face, y: sho.y + 0.1 - 0.04 };
     const lm = new Array(33).fill(null).map(() => ({ x: 0, y: 0, z: 0, v: 0.95 }));
     const put = (idx, p) => { lm[idx] = { x: p.x / ASPECT, y: p.y, z: 0, v: 0.95 }; };

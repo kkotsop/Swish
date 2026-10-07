@@ -4,11 +4,11 @@ import { LM, angleAt, argmax, argmin, clamp, deg, dist, fillGaps, mean, median, 
 
 export const SHOOTING_METRICS = [
   'releaseAngle', 'forwardDrift', 'elbowAngle', 'kneeDip',
-  'elbowAlignment', 'releaseHeight', 'followThrough', 'tempo',
+  'elbowAlignment', 'releaseHeight', 'followThrough', 'tempo', 'guideHand',
 ];
 
 /** Build smoothed per-landmark series in aspect-corrected units (x scaled by width/height). */
-function buildSeries(frames, aspect) {
+function buildSeries(frames, aspect, smoothN) {
   const n = frames.length;
   const series = {};
   const vis = {};
@@ -18,7 +18,7 @@ function buildSeries(frames, aspect) {
       const p = f.lm && f.lm[idx];
       if (p) { xs[i] = p.x * aspect; ys[i] = p.y; vs[i] = p.v ?? 1; }
     });
-    const sx = smoothSeries(fillGaps(xs), 5), sy = smoothSeries(fillGaps(ys), 5);
+    const sx = smoothSeries(fillGaps(xs), smoothN), sy = smoothSeries(fillGaps(ys), smoothN);
     series[name] = sx.map((x, i) => ({ x, y: sy[i] }));
     vis[name] = vs;
   }
@@ -47,8 +47,10 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const n = frames.length;
   if (n < fps) return { ok: false, error: 'too-short' };
   const ranges = config.moves.shooting.ranges;
-  const { series: S, vis } = buildSeries(frames, aspect);
   const rate = (sec) => Math.max(1, Math.round(sec * fps));
+  // Windows are defined in time (not frames) so 30 fps and 60 fps analysis agree.
+  const smoothN = Math.max(3, 2 * Math.round(rate(1 / 12) / 2) + 1);
+  const { series: S, vis } = buildSeries(frames, aspect, smoothN);
 
   // ---- Handedness: the wrist that gets highest above its shoulder is the shooting hand.
   const rise = (side) => S[side + 'Shoulder'].map((s, i) => s.y - S[side + 'Wrist'][i].y); // >0 = wrist above shoulder
@@ -65,6 +67,7 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const side = hand === 'right' ? 'r' : 'l';
   const guide = hand === 'right' ? 'l' : 'r';
   const sh = S[side + 'Shoulder'], el = S[side + 'Elbow'], wr = S[side + 'Wrist'], ix = S[side + 'Index'];
+  const gw = S[guide + 'Wrist'];
   const rises = hand === 'right' ? riseR : riseL;
   if (Math.max(peakL, peakR) < 0.1 * (bodyH || 1)) return { ok: false, error: 'no-shot' };
 
@@ -73,6 +76,10 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const elbowAng = sh.map((s, i) => angleAt(s, el[i], wr[i]));
   const relFrom = Math.max(0, peak - rate(0.2)), relTo = Math.min(n - 1, peak + rate(0.1));
   const release = argmax(elbowAng, relFrom, relTo);
+
+  // A real shot has the elbow going from bent to straight. A raised arm that stays straight is not a shot.
+  const bentMin = Math.min(...elbowAng.slice(Math.max(0, release - rate(0.9)), release + 1));
+  if (!(elbowAng[release] - bentMin >= 25)) return { ok: false, error: 'no-shot' };
 
   // Facing direction (+1 = facing right in the image) from the arm extending toward the basket.
   let facingSum = 0;
@@ -83,9 +90,12 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const hipY = S.lHip.map((h, i) => (h.y + S.rHip[i].y) / 2);
   const hipX = S.lHip.map((h, i) => (h.x + S.rHip[i].x) / 2);
   const ankY = S.lAnkle.map((a, i) => (a.y + S.rAnkle[i].y) / 2);
-  const ankX = S.lAnkle.map((a, i) => (a.x + S.rAnkle[i].x) / 2);
+
+  // Lowest point of the shot = the frame of deepest knee bend (max flexion) before the jump/release.
+  const flexAt = (i) => mean([180 - angleAt(S.lHip[i], S.lKnee[i], S.lAnkle[i]), 180 - angleAt(S.rHip[i], S.rKnee[i], S.rAnkle[i])]);
+  const kneeFlex = smoothSeries(frames.map((_, i) => flexAt(i)), 3);
   const bottomFrom = Math.max(0, release - rate(1.6));
-  const bottom = argmax(hipY, bottomFrom, Math.max(bottomFrom, release - rate(0.1))); // lowest hips = bottom of the dip
+  const bottom = argmax(kneeFlex, bottomFrom, Math.max(bottomFrom, release - rate(0.1)));
 
   // Standing baseline for ankles/nose (before the dip) -> body height and takeoff/landing detection.
   const baseTo = Math.max(1, bottom - rate(0.1)), baseFrom = Math.max(0, baseTo - rate(0.6));
@@ -102,13 +112,15 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   for (let i = Math.max(apex, release); i < n; i++) { if (ankBase - ankY[i] <= jumpEps) { landing = i; break; } }
   const jumped = ankBase - ankY[apex] > jumpEps;
 
-  // Set point: held-ball moment = most flexed elbow between the dip and release, with wrist above the shoulder.
+  // Set point: held-ball moment = most bent elbow after the dip while the hand is above the elbow
+  // (forearm roughly upright, ball in front of the face/shoulder), just before the arm extends.
   let set = -1, best = Infinity;
   for (let i = bottom; i < release; i++) {
-    if (rises[i] > 0 && elbowAng[i] < best) { best = elbowAng[i]; set = i; }
+    if (wr[i].y < el[i].y && elbowAng[i] < best) { best = elbowAng[i]; set = i; }
   }
-  if (set >= 0) { // elbow flexion plateaus while the ball is held: use the last frame of the plateau (within 4 deg of the minimum)
-    for (let i = set; i < release; i++) if (rises[i] > 0 && elbowAng[i] <= best + 4) set = i;
+  let setFound = set >= 0;
+  if (setFound) { // elbow flexion plateaus while the ball is held: use the last frame of the plateau
+    for (let i = set; i < release; i++) if (wr[i].y < el[i].y && elbowAng[i] <= best + 4) set = i;
   } else set = Math.round(bottom + 0.6 * (release - bottom));
 
   // Start of the load for tempo: last frame before the bottom where hips were still near standing height.
@@ -126,14 +138,19 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const m = {};
   const add = (id, value, unit, frame, names, from, to, extra = {}) => {
     const sc = scoreValue(value, ranges[id]);
-    m[id] = { id, value, unit, frame, confidence: confidenceFor(vis, names, from, to), ...sc, ...extra };
+    m[id] = { id, value, unit, frame, confidence: Number.isFinite(value) ? confidenceFor(vis, names, from, to) : 'low', ...sc, ...extra };
   };
   const armNames = [side === 'r' ? 'rShoulder' : 'lShoulder', side === 'r' ? 'rElbow' : 'lElbow', side === 'r' ? 'rWrist' : 'lWrist'];
 
-  // 1. Release angle: direction of wrist travel over the last ~4 frames before release.
-  const a = Math.max(0, release - 4);
-  const vx = (wr[release].x - wr[a].x) * facing, vy = wr[a].y - wr[release].y;
-  add('releaseAngle', deg(Math.atan2(vy, vx)), 'deg', release, [armNames[2]], a, release);
+  // 1. Release angle: direction of travel of the shooting wrist at its fastest upward moment up to release.
+  //    Always measured on a frame where the hand is moving up, so it can never come out negative.
+  const lag = Math.max(2, rate(0.066));
+  let relIdx = -1, relSpeed = 0, relAngle = NaN;
+  for (let i = Math.max(lag, release - rate(0.3)); i <= Math.min(n - 1, release + rate(0.05)); i++) {
+    const vy = wr[i - lag].y - wr[i].y, vx = (wr[i].x - wr[i - lag].x) * facing, sp = Math.hypot(vx, vy);
+    if (vy > 0 && sp > relSpeed) { relSpeed = sp; relIdx = i; relAngle = deg(Math.atan2(vy, vx)); }
+  }
+  add('releaseAngle', relAngle, 'deg', release, [armNames[2]], Math.max(0, (relIdx < 0 ? release : relIdx) - lag), release);
 
   // 2. Forward drift: hip travel takeoff -> landing in shin lengths, plus how much happened before release.
   const driftLanding = ((hipX[landing] - hipX[takeoff]) * facing) / (shin || 1);
@@ -143,13 +160,12 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
     note: driftLanding >= 0 ? 'forward' : 'backward',
   });
 
-  // 3. Elbow angle at the set point.
+  // 3. Elbow angle at the set point. A nearly straight arm there means we did not find a real set position.
   add('elbowAngle', elbowAng[set], 'deg', set, armNames, set - 2, set + 2);
+  if (!setFound || elbowAng[set] > 140) m.elbowAngle.confidence = 'low';
 
-  // 4. Knee dip: flexion (180 - interior angle) at the bottom, averaged over both legs.
-  const flex = (k, h, an) => 180 - angleAt(S[h][bottom], S[k][bottom], S[an][bottom]);
-  add('kneeDip', mean([flex('lKnee', 'lHip', 'lAnkle'), flex('rKnee', 'rHip', 'rAnkle')]), 'deg', bottom,
-    ['lHip', 'rHip', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle'], bottom - 3, bottom + 3);
+  // 4. Knee dip: deepest knee bend of the shot (flexion = 180 - interior angle, averaged over both legs).
+  add('kneeDip', kneeFlex[bottom], 'deg', bottom, ['lHip', 'rHip', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle'], bottom - 3, bottom + 3);
 
   // 5. Elbow alignment: mean forearm tilt from vertical while the ball rises (set -> release).
   const tilts = [];
@@ -166,11 +182,18 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   // 8. Tempo: load start -> release.
   add('tempo', (release - loadStart) / fps, 's', release, ['lHip', 'rHip', 'lKnee', 'rKnee'], loadStart, release);
 
+  // 9. Guide (off) hand: distance between the two wrists while the ball is held and rising, in forearm lengths.
+  //    Close = the off hand rides on the side of the ball; far = it is floating away or hanging low.
+  const gEnd = Math.max(set + 1, Math.round(set + 0.5 * (release - set)));
+  const gd = [];
+  for (let i = set; i <= gEnd; i++) gd.push(dist(gw[i], wr[i]) / (dist(el[i], wr[i]) || 1));
+  add('guideHand', mean(gd), 'forearms', set, [armNames[2], guide === 'r' ? 'rWrist' : 'lWrist'], set, gEnd);
+
   return {
     ok: true, hand, handAmbiguous, facing,
     phases: { loadStart, bottom, takeoff, set, release, follow, apex, landing },
     metrics: m,
-    guideHand: guide,
+    guideHand: hand === 'right' ? 'left' : 'right',
   };
 }
 

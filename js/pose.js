@@ -1,5 +1,6 @@
 // MediaPipe Pose (WASM, on-device) wrapper: frame stepping, fps measurement, brightness, key-frame grabs.
 import { PoseLandmarker, FilesetResolver } from '../vendor/mediapipe/vision_bundle.mjs';
+import { isPlausibleHuman, poseBox } from './precheck.js';
 
 let landmarker = null;
 let loading = null;
@@ -59,13 +60,13 @@ export function measureFps(video) {
       video.pause();
       const d = times.slice(1).map((t, i) => t - times[i]).filter((x) => x > 0).sort((a, b) => a - b);
       await seek(video, 0);
-      resolve(d.length >= 5 ? 1 / d[d.length >> 1] : null);
+      resolve(d.length >= 4 ? 1 / d[d.length >> 1] : null);
     };
-    const cb = (_now, meta) => { times.push(meta.mediaTime); if (times.length >= 20) finish(); else video.requestVideoFrameCallback(cb); };
+    const cb = (_now, meta) => { times.push(meta.mediaTime); if (times.length >= 10) finish(); else video.requestVideoFrameCallback(cb); };
     video.requestVideoFrameCallback(cb);
     video.currentTime = 0;
     video.play().catch(() => finish());
-    setTimeout(finish, 2500);
+    setTimeout(finish, 1500);
   });
 }
 
@@ -84,44 +85,48 @@ function brightnessOf(ctx, w, h) {
   for (let i = 0; i < d.length; i += 64) { sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; n++; }
   return sum / n;
 }
+/** Warm up the WASM runtime and model in the background so "Analyse" doesn't wait for it. */
+export function preloadPose(cfg) { loadPose(cfg).catch(() => {}); }
+
 const toLm = (arr) => arr.map((p) => ({ x: p.x, y: p.y, z: p.z, v: p.visibility ?? 1 }));
 
-/** Cheap probe on a few evenly spaced frames, used for the quality pre-check before heavy processing. */
-export async function probeClip(video, { start, duration, samples = 8 }, cfg) {
-  const lm = await loadPose(cfg);
-  await lm.setOptions({ runningMode: 'IMAGE' });
-  const canvas = document.createElement('canvas');
-  const per = [], times = [], br = [];
-  for (let i = 0; i < samples; i++) {
-    const t = start + ((i + 0.5) / samples) * duration;
-    await seek(video, t);
-    const ctx = drawFrame(video, canvas, 480);
-    br.push(brightnessOf(ctx, canvas.width, canvas.height));
-    const res = lm.detect(canvas);
-    per.push(res.landmarks.map(toLm)); times.push(t);
-  }
-  await lm.setOptions({ runningMode: 'VIDEO' });
-  return { per, times, brightness: br.reduce((a, b) => a + b, 0) / br.length };
-}
-
-/** Full pass: step through the clip at `fps`, run pose on each frame. */
-export async function processClip(video, { start, duration, fps }, cfg, onProgress) {
+/**
+ * Full pass: step through the clip at `fps`, run pose on each frame.
+ * Speed: the seek for frame i+1 is started *before* pose inference runs on frame i, so the video decoder
+ * works while the (synchronous) model call blocks the main thread. Seek latency is the main cost on iOS.
+ */
+export async function processClip(video, { start, duration, fps }, cfg, onProgress, hooks = {}) {
   const lm = await loadPose(cfg);
   await lm.setOptions({ runningMode: 'VIDEO' });
   const canvas = document.createElement('canvas');
   const n = Math.floor(duration * fps);
-  const per = [], times = [];
+  const per = [], times = [], lumas = [];
+  const EARLY = Math.min(n - 1, 14);
+  const t0 = performance.now();
+  await seek(video, start);
   for (let i = 0; i < n; i++) {
-    const t = start + i / fps;
-    await seek(video, t);
-    drawFrame(video, canvas, 720);
+    const ctx = drawFrame(video, canvas, 512);
+    if (i === 0 || i === 4 || i === 9 || i === EARLY) lumas.push(brightnessOf(ctx, canvas.width, canvas.height));
+    const next = i + 1 < n ? seek(video, start + (i + 1) / fps) : null;
     videoStamp += 1000 / fps;
     const res = lm.detectForVideo(canvas, videoStamp);
-    per.push(res.landmarks.map(toLm)); times.push(i / fps);
-    if (i % 3 === 0) { onProgress && onProgress((i + 1) / n); await new Promise((r) => setTimeout(r)); }
+    const poses = res.landmarks.map(toLm);
+    per.push(poses); times.push(i / fps);
+    if (i === EARLY && hooks.earlyCheck) { // fail fast on a clip that is clearly unusable
+      const msg = hooks.earlyCheck({ per, brightness: lumas.reduce((a, b) => a + b, 0) / lumas.length });
+      if (msg) throw Object.assign(new Error(msg), { early: true });
+    }
+    if (hooks.onPreview && i % 3 === 0) {
+      const main = poses.filter(isPlausibleHuman).sort((a, b) => (poseBox(b)?.h || 0) - (poseBox(a)?.h || 0))[0] || null;
+      hooks.onPreview(canvas, main);
+    }
+    if (onProgress) {
+      const done = i + 1, elapsed = (performance.now() - t0) / 1000;
+      onProgress(done / n, { done, total: n, etaSec: done > 4 ? (elapsed / done) * (n - done) : null });
+    }
+    if (next) await next; else await new Promise((r) => setTimeout(r));
   }
-  onProgress && onProgress(1);
-  return { per, times, aspect: video.videoWidth / video.videoHeight };
+  return { per, times, aspect: video.videoWidth / video.videoHeight, brightness: lumas.reduce((a, b) => a + b, 0) / lumas.length };
 }
 
 /** Grab a still (JPEG data URL, max 540px wide) at an analysis time offset. */
