@@ -119,7 +119,7 @@ export const NEXT_STEP = {
 export function summarize(move, metrics, score) {
   const copy = COPY[move];
   const list = Object.entries(metrics).filter(([, m]) => m.status !== 'unknown');
-  const meaning = score >= 85 ? 'Excellent form.' : score >= 70 ? 'Solid form.' : score >= 50 ? 'Good start.' : 'Early days.';
+  const meaning = score >= 85 ? 'Excellent form.' : score >= 70 ? 'Solid form.' : score >= 50 ? 'Getting there.' : 'Early days.';
   const best = list.filter(([, m]) => m.status === 'good').sort((a, b) => b[1].score - a[1].score).slice(0, 2).map(([id]) => copy[id].name.toLowerCase());
   const works = best.length ? `Working well: ${best.join(' and ')}.` : 'Nothing is in the green yet. Pick one fix.';
   const worst = list.filter(([, m]) => m.status !== 'good').sort((a, b) => a[1].score - b[1].score)[0];
@@ -146,16 +146,15 @@ export async function personalisedAdvice(move, metrics, ranges, cfg, fetchImpl =
   const base = templateAdvice(move, metrics, ranges);
   const url = cfg.llm && cfg.llm.proxyUrl;
   if (!url) return base;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), cfg.llm.timeoutMs || 6000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), cfg.llm.timeoutMs || 6000);
     const body = { move, metrics: Object.fromEntries(Object.entries(metrics).map(([id, m]) => [id, { name: COPY[move][id].name, value: +Number(m.value).toFixed(2), unit: m.unit, status: m.status, good: ranges[id].good }])) };
     const res = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
-    clearTimeout(timer);
     if (!res.ok) return base;
     const data = await res.json();
     const merged = { ...base };
     for (const id of Object.keys(base)) if (typeof data.advice?.[id] === 'string' && data.advice[id].length < 400) merged[id] = data.advice[id];
     return merged;
-  } catch { return base; }
+  } catch { return base; } finally { clearTimeout(timer); }
 }

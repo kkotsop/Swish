@@ -24,7 +24,7 @@ function go(screen, ...args) {
 // ---------- 1. Profile (one player, saved once) ----------
 function profileScreen() {
   let photo = null;
-  const name = h('input', { type: 'text', placeholder: 'Your name', maxlength: 24, 'aria-label': 'Your name', autocomplete: 'off' });
+  const name = h('input', { type: 'text', placeholder: 'Your name', maxlength: 24, 'aria-label': 'Your name', autocomplete: 'off', enterkeyhint: 'done', onKeydown: (e) => { if (e.key === 'Enter') create.click(); } });
   const preview = h('span', { class: 'ico-slot' }, icon('plus'));
   const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' }, onChange: async (e) => {
     const f = e.target.files[0]; if (!f) return;
@@ -69,17 +69,18 @@ function moveScreen() {
   };
   start.addEventListener('click', () => { const m = moves[current]; if (m.available) { S.move = m; setTimeout(() => go(filmScreen), 140); } });
   const track = h('div', { class: 'carousel', tabindex: '0', 'aria-label': 'Moves, swipe sideways' }, cards);
-  track.addEventListener('scroll', () => {
-    const c = track.getBoundingClientRect(); const mid = c.left + c.width / 2;
-    let best = 0, bd = 1e9;
-    cards.forEach((el, i) => { const r = el.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - mid); if (d < bd) { bd = d; best = i; } });
+  // One scroll handler, at most once per frame: read every card position first, then write (no forced re-layout).
+  // Cards shrink as they leave the centre, like a stack of physical cards, and the centred one becomes current.
+  let queued = false;
+  const depth = () => {
+    queued = false;
+    const mid = track.scrollLeft + track.clientWidth / 2;
+    const dist = cards.map((el) => Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid) / (el.offsetWidth || 1));
+    dist.forEach((d, i) => cards[i].style.setProperty('--d', Math.min(1, d).toFixed(3)));
+    const best = dist.indexOf(Math.min(...dist));
     if (best !== current) { current = best; sync(); buzz(6); }
-  }, { passive: true });
-  const depth = () => { // cards shrink and dim as they leave the centre, like a stack of physical cards
-    const c = track.getBoundingClientRect(), mid = c.left + c.width / 2;
-    cards.forEach((el) => { const r = el.getBoundingClientRect(); el.style.setProperty('--d', Math.min(1, Math.abs(r.left + r.width / 2 - mid) / r.width).toFixed(3)); });
   };
-  track.addEventListener('scroll', depth, { passive: true });
+  track.addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(depth); } }, { passive: true });
   mount(h('div', { class: 'screen home' },
     topRow(),
     h('h1', { 'data-focus': '' }, `Hey ${S.profile.name}.`),
@@ -90,7 +91,8 @@ function moveScreen() {
 }
 
 // ---------- 3. Film: where to stand, then upload or record, on one screen ----------
-function filmScreen(view = 'side') {
+/** `file`: start reading this clip straight away (used by "Try this video again"). */
+function filmScreen(view = 'side', file = null) {
   const input = h('input', { type: 'file', accept: 'video/*', style: { display: 'none' } });
   const stage = h('div', { class: 'stage' }, guideSvg(view));
   const tipsEl = tips();
@@ -109,15 +111,18 @@ function filmScreen(view = 'side') {
     tipsEl.hidden = true; loader.hidden = false;
     preloadPose(S.config);
     return startUpload(file, (v) => {
-      v.addEventListener('loadeddata', () => {
+      const poster = () => {
+        if (!v.videoWidth || !stage.isConnected) return;
         try {
           const s = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
           const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
           c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
           stage.replaceChildren(c); stage.classList.add('has-video');
         } catch { /* keep the animation if the frame cannot be read */ }
-      }, { once: true });
-    });
+      };
+      v.addEventListener('loadeddata', poster, { once: true });
+      v.addEventListener('seeked', poster, { once: true }); // the fps check rewinds to the start: a frame iOS has surely painted
+    }, () => stage.isConnected);
   };
   input.addEventListener('change', () => {
     const f = input.files[0];
@@ -125,7 +130,8 @@ function filmScreen(view = 'side') {
     if (f) begin(f);
   });
   mount(h('div', { class: 'screen' }, topbar(S.move.name, () => go(moveScreen)), tabs, stage, h('div', { class: 'slot' }, tipsEl, loader), actions));
-  setTimeout(() => preloadPose(S.config), 2500); // warm the pose model once the screen has settled, not while you are tapping in
+  if (file) begin(file);
+  else setTimeout(() => preloadPose(S.config), 2500); // warm the pose model once the screen has settled, not while you are tapping in
 }
 
 // ---------- 4. Record ----------
@@ -136,9 +142,10 @@ function recordScreen() {
 }
 const captureScreen = (tab = 'upload') => (tab === 'record' ? recordScreen() : filmScreen());
 
-/** The camera (and its permission prompt) is only started once the user taps "Open camera". */
+/** The three filming checks shown on the film and record screens. */
 const tips = () => h('div', { class: 'tips' }, ['60 fps+', 'Phone upright, 3 m', 'Full body in frame'].map((t) => h('span', { class: 'pill' }, icon('check', 14), t)));
 
+/** The camera (and its permission prompt) is only started once the user taps "Open camera". */
 function recordPane(body) {
   const intro = h('div', { class: 'tile-wrap' },
     h('div', { class: 'drop' },
@@ -151,7 +158,7 @@ function recordPane(body) {
 }
 
 async function startRecorder(body) {
-  let stream = null, busy = false, countdown = 5;
+  let stream = null, busy = false, countdown = 5, gone = false; // `gone`: the user left this screen
   const video = h('video', { autoplay: true, muted: true, playsinline: true });
   video.muted = true;
   const count = h('div', { class: 'count' });
@@ -170,14 +177,16 @@ async function startRecorder(body) {
     recBtn.disabled = wrong || busy || !stream;
   };
   const offOri = onOrientationChange(syncOrientation);
-  S.cleanup = () => { offOri(); stopStream(stream); };
+  S.cleanup = () => { gone = true; offOri(); stopStream(stream); };
 
   try {
     stream = await openCamera(want);
+    if (gone) { stopStream(stream); return; } // left before the camera opened
     video.srcObject = stream;
     await video.play().catch(() => {});
     syncOrientation();
   } catch (e) {
+    if (gone) return;
     overlay.style.display = 'grid'; overlay.textContent = e.message;
   }
 
@@ -186,7 +195,8 @@ async function startRecorder(body) {
     busy = true; recBtn.disabled = true; unlockAudio();
     const track = stream.getVideoTracks()[0];
     const settings = track.getSettings ? track.getSettings() : {};
-    for (let n = countdown; n > 0; n--) { count.textContent = String(n); beep(660, 140); await new Promise((r) => setTimeout(r, 1000)); }
+    for (let n = countdown; n > 0; n--) { if (gone) return; count.textContent = String(n); beep(660, 140); await new Promise((r) => setTimeout(r, 1000)); }
+    if (gone) return;
     count.textContent = '';
     try {
       const secs = S.config.clipSeconds;
@@ -195,8 +205,10 @@ async function startRecorder(body) {
       S.lastFile = null;
       const v = makeVideo(blob);
       await whenReady(v);
+      if (gone) return;
       go(analyzeScreen, { video: v, start: 0, duration: Math.min(secs, v.duration || secs), fps: settings.frameRate || null, source: 'record' });
     } catch (e) {
+      if (gone) return; // stopping the camera on the way out is not an error
       busy = false; recBtn.disabled = false; count.textContent = '';
       go(errorScreen, e.message);
     }
@@ -204,19 +216,21 @@ async function startRecorder(body) {
 }
 
 /** Read an uploaded file and route it to trim or analysis. Used by the picker and by "try this clip again". */
-async function startUpload(file, onVideo) {
+async function startUpload(file, onVideo, stillHere = () => true) {
   S.lastFile = file;
+  let v = null;
   try {
-    const v = makeVideo(file);
+    v = makeVideo(file);
     if (onVideo) onVideo(v);
     await whenReady(v);
     const fps = await measureFps(v);
+    if (!stillHere()) return URL.revokeObjectURL(v.src); // the user backed out while the clip was being read
     const fpsCheck = fps ? checkFps(fps, S.config) : null;
     const msg = (fpsCheck && fpsCheck.level === 'block' && fpsCheck.message) || checkOrientation(v.videoWidth, v.videoHeight, S.move.orientation);
-    if (msg) return go(errorScreen, msg);
+    if (msg) { URL.revokeObjectURL(v.src); return go(errorScreen, msg); }
     const clip = { video: v, fps, source: 'upload', total: v.duration };
     if (v.duration > S.config.clipSeconds + 0.3) go(trimScreen, clip); else go(analyzeScreen, { ...clip, start: 0, duration: v.duration });
-  } catch (e) { go(errorScreen, e.message || 'Could not read this video.'); }
+  } catch (e) { if (v) URL.revokeObjectURL(v.src); if (stillHere()) go(errorScreen, e.message || 'Could not read this video.'); }
 }
 
 // ---------- 4b. Trim ----------
@@ -234,13 +248,17 @@ function trimScreen(clip) {
   };
   ia.addEventListener('input', () => { a = +ia.value; if (b - a > MAXW) b = a + MAXW; if (b - a < MINW) b = Math.min(dur, a + MINW), a = Math.max(0, b - MINW); ia.value = a; ib.value = b; v.currentTime = a; paint(); });
   ib.addEventListener('input', () => { b = +ib.value; if (b - a > MAXW) a = b - MAXW; if (b - a < MINW) a = Math.max(0, b - MINW), b = Math.min(dur, a + MINW); ia.value = a; ib.value = b; v.currentTime = b; paint(); });
-  const play = h('button', { class: 'btn alt', onClick: () => { v.currentTime = a; v.play(); const t = setInterval(() => { if (v.currentTime >= b || v.paused) { v.pause(); clearInterval(t); } }, 50); } }, icon('play', 20), 'Preview');
+  let timer = 0;
+  const stopPreview = () => { clearInterval(timer); timer = 0; };
+  let toAnalysis = false;
+  S.cleanup = () => { stopPreview(); v.pause(); if (!toAnalysis) URL.revokeObjectURL(v.src); }; // analysis releases it when done
+  const play = h('button', { class: 'btn alt', onClick: () => { stopPreview(); v.currentTime = a; v.play().catch(() => {}); timer = setInterval(() => { if (v.currentTime >= b || v.paused) { v.pause(); stopPreview(); } }, 50); } }, icon('play', 20), 'Preview');
   paint(); v.currentTime = 0;
   mount(h('div', { class: 'screen trim' }, topbar('Pick the shot', () => go(captureScreen, 'upload')),
     p5(`Choose up to ${MAXW} seconds that include the whole shot: load, jump and release.`), v,
     h('div', { class: 'range' }, h('div', { class: 'track' }), win, ia, ib), h('div', { style: { textAlign: 'center' } }, label),
     h('div', { class: 'spacer' }), h('div', { class: 'stack' }, play,
-      h('button', { class: 'btn', onClick: () => go(analyzeScreen, { ...clip, start: a, duration: b - a }) }, 'Analyse'))));
+      h('button', { class: 'btn', onClick: () => { toAnalysis = true; go(analyzeScreen, { ...clip, start: a, duration: b - a }); } }, 'Analyse'))));
 }
 const p5 = (t) => h('p', {}, t);
 
@@ -277,7 +295,7 @@ function errorScreen(message) {
     h('h1', {}, 'Hold up'),
     h('div', { class: 'panel err' }, h('b', { style: { fontSize: '17px', lineHeight: 1.35 } }, message)),
     h('div', { class: 'stack' },
-      S.lastFile ? h('button', { class: 'btn', onClick: () => startUpload(S.lastFile) }, icon('retry', 22), 'Try this video again') : null,
+      S.lastFile ? h('button', { class: 'btn', onClick: () => go(filmScreen, 'side', S.lastFile) }, icon('retry', 22), 'Try this video again') : null,
       h('button', { class: S.lastFile ? 'btn alt' : 'btn', onClick: () => go(captureScreen, 'upload') }, 'Choose another video'),
       h('button', { class: 'btn alt', onClick: () => go(captureScreen, 'record') }, 'Record a new one'),
       h('button', { class: 'btn ghost', onClick: () => go(moveScreen) }, 'Home'))));
@@ -285,11 +303,12 @@ function errorScreen(message) {
 
 // ---------- 7 + 8. Report (+ save) ----------
 function reportScreen(result) {
-  store.addSession({
+  const saved = store.addSession({
     id: store.newId(), ts: result.ts, profileId: S.profile.id, move: result.move, hand: result.hand, score: result.score,
     metrics: Object.fromEntries(Object.entries(result.metrics).map(([id, m]) => [id, { value: m.value, score: m.score, status: m.status }])),
-  }) || toast('Could not save (storage full?)');
-  mount(renderReport({ result, move: S.move, profile: S.profile, actions: {
+  });
+  if (!saved) toast('Could not save (storage full?)');
+  mount(renderReport({ result, move: S.move, profile: S.profile, saved, actions: {
     onRetry: () => go(captureScreen, 'upload'), onProgress: () => go(progressScreen, S.move), onHome: () => go(moveScreen) } }));
 }
 
@@ -317,12 +336,13 @@ function progressScreen(move) {
         d == null ? h('span', { class: 'lbl' }, `${sessions.length} session`) : h('span', { class: 'delta' }, d > 0 ? icon('up', 16) : d < 0 ? icon('down', 16) : icon('dash', 16), `${d > 0 ? '+' : d < 0 ? '\u2212' : ''}${Math.abs(d)} since last`),
         lineChart(overall, { height: 120, color: token('--pink') })),
       h('div', { class: 'stack' }, rows)]
-      : [h('div', { class: 'panel stack' }, h('h2', {}, 'No sessions yet'), p5(`Record your first ${move.name.toLowerCase()} clip to start tracking.`), h('button', { class: 'btn', onClick: () => go(filmScreen) }, icon('camera', 22), 'Record now'))]));
+      : [h('div', { class: 'panel stack' }, h('h2', {}, 'No sessions yet'), p5(`Record your first ${move.name.toLowerCase()} clip to start tracking.`), h('button', { class: 'btn', onClick: () => { S.move = move; go(filmScreen); } }, icon('camera', 22), 'Record now'))]));
 }
 
 // ---------- boot ----------
 document.addEventListener('touchstart', () => {}, { passive: true }); // lets iOS Safari react the instant a finger lands
 initPress();
+window.__swishBooted = true; // index.html shows a reload prompt if the app code never gets this far
 (async function boot() {
   try { S.config = await store.loadConfig(); } catch { mount(h('div', { class: 'screen' }, h('h1', {}, 'Offline'), p5('Could not load settings. Open Swish once with a connection.'))); return; }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

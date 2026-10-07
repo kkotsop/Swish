@@ -1,10 +1,10 @@
 // Per-move progress charts (inline SVG, no libraries).
+import { token } from './tokens.js';
+
 const NS = 'http://www.w3.org/2000/svg';
 const el = (n, a = {}) => { const e = document.createElementNS(NS, n); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
 
 /** points: [{ ts, v }] with v in 0..100. */
-import { token } from './tokens.js';
-
 export function lineChart(points, { color = token('--blue'), height = 120, label = true, gridColor = token('--s3') } = {}) {
   const W = 320, H = height, pad = 14;
   const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img', 'aria-label': points.length ? `Score trend, latest ${Math.round(points[points.length - 1].v)} out of 100` : 'No scores yet' });

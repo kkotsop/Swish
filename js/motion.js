@@ -6,8 +6,8 @@ export function spring({ from, to, velocity = 0, response = 0.3, damping = 1, re
   const w = (2 * Math.PI) / response, k = w * w, c = 2 * damping * w;
   let x = from, v = velocity, last = performance.now(), raf = 0, done = false;
   const step = (t) => {
-    const dt = Math.min(0.032, (t - last) / 1000); last = t;
-    const n = Math.max(1, Math.ceil(dt / 0.004)), hh = dt / n;
+    const dt = Math.max(0, Math.min(0.032, (t - last) / 1000)); last = Math.max(last, t); // rAF time can predate the start
+    const n = Math.max(1, Math.ceil(dt / 0.004)), hh = dt / n; // small fixed sub-steps keep stiff springs stable
     for (let i = 0; i < n; i++) { v += (-k * (x - to) - c * v) * hh; x += v * hh; }
     if (Math.abs(x - to) < restDelta && Math.abs(v) < restSpeed) { x = to; v = 0; done = true; onUpdate(x, v); if (onDone) onDone(); return; }
     onUpdate(x, v);

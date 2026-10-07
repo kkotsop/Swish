@@ -3,8 +3,8 @@
 
 import { reducedMotion } from './tokens.js';
 
-// Player kit: skin, a blue jersey, dark shorts, white sneakers, a pink shooting-arm sleeve.
-const SKIN = '#d9a07a', SKIN_DIM = '#b98562', JERSEY = '#f6f6f9', SHORTS = '#1b2233', TRIM = '#1f9bbd', BAND = '#f2a3bf', SHOE = '#f6f6f9', SOLE = '#8e94ad', HAIR = '#2a1a12', JOINT = '#22242e', ARM = '#ff4fa3', BALL = '#d2691e', BALL_LINE = '#3a1c08';
+// Player kit: a white jersey with teal trim, dark shorts, white sneakers, a pink headband and a pink shooting-arm sleeve.
+const SKIN = '#d9a07a', SKIN_DIM = '#b98562', JERSEY = '#f6f6f9', SHORTS = '#1b2233', TRIM = '#1f9bbd', BAND = '#f2a3bf', SHOE = '#f6f6f9', SOLE = '#8e94ad', HAIR = '#2a1a12', ARM = '#ff4fa3', BALL = '#d2691e', BALL_LINE = '#3a1c08';
 const DUR = '3.6s';
 // Key times of the shot: stand, stand, dip, set, jump/release, follow-through, landing, stand.
 const KT = '0;.12;.35;.5;.6;.7;.85;1';
@@ -21,7 +21,7 @@ const ballInHand = (anim) => `<g>${anim}<circle cx="0" cy="8" r="7.5" fill="${BA
 const BALL_FADE = fade([1, 1, 1, 1, 0, 0, 0, 1]);
 const BODY_Y = [0, 0, 9, 0, -16, -8, 2, 0];
 
-const sneaker = (side) => `<g transform="translate(${side ? 0 : 0} 0)"><rect x="${side ? -3 : -5}" y="-3" width="${side ? 16 : 11}" height="8" rx="3.5" fill="${SHOE}"/><rect x="${side ? -3 : -5}" y="3" width="${side ? 16 : 11}" height="2.5" rx="1.2" fill="${SOLE}"/><rect x="${side ? 4 : 0}" y="-1" width="3" height="1.6" rx=".8" fill="${TRIM}"/></g>`;
+const sneaker = (side) => `<g><rect x="${side ? -3 : -5}" y="-3" width="${side ? 16 : 11}" height="8" rx="3.5" fill="${SHOE}"/><rect x="${side ? -3 : -5}" y="3" width="${side ? 16 : 11}" height="2.5" rx="1.2" fill="${SOLE}"/><rect x="${side ? 4 : 0}" y="-1" width="3" height="1.6" rx=".8" fill="${TRIM}"/></g>`;
 const head = (face) => `<g><circle r="8" fill="${SKIN}"/><path d="M-8 -1 A8 8 0 0 1 8 -1 L8 -3 A8 8 0 0 0 -8 -3 Z" fill="${HAIR}"/><rect x="-8.4" y="-4.6" width="16.8" height="3.4" rx="1.7" fill="${BAND}"/>${face ? '<circle cx="3.2" cy="1.2" r="1" fill="#22242e"/>' : '<circle cx="-2.6" cy="1.4" r="1" fill="#22242e"/><circle cx="2.6" cy="1.4" r="1" fill="#22242e"/>'}</g>`;
 
 function sideHuman() {
@@ -80,6 +80,3 @@ export function guideSvg(view = 'side') {
   if (reducedMotion()) wrap.querySelectorAll('svg').forEach((svg) => { try { svg.pauseAnimations(); svg.setCurrentTime(2.2); } catch { /* not supported */ } }); // park on the release frame
   return wrap;
 }
-
-/** Back-compat helper used by older code paths. */
-export const placementSvg = (orientation) => guideSvg(orientation === 'landscape' ? 'front' : 'side');

@@ -8,12 +8,14 @@ See the product spec this was built from: [`SWISH_SPEC.md`](SWISH_SPEC.md) (§ n
 
 ## Run it on your iPhone
 
-Camera access needs **HTTPS**, so the easiest route is GitHub Pages:
+Works best on iOS 17.2 or newer (Safari); older versions still work but lose some animation and colour details. Camera access needs **HTTPS**, so the easiest route is GitHub Pages:
 
 1. Merge to `main`. In the repo go to **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 2. The *Deploy to GitHub Pages* workflow runs the tests and publishes the site (about 1 minute). Your URL is `https://<user>.github.io/Swish/`.
 3. Open that URL in **Safari** on the iPhone → **Share → Add to Home Screen**. Launch Swish from the home screen icon.
 4. First launch: allow the camera. (If you tapped *Don't Allow*: Settings → Apps → Safari → Camera, or delete and re-add the home-screen app.)
+
+**Updating.** App code is fetched network-first (the offline copy is used only when the network fails), so a new deploy shows on the next launch. A new version only takes over once every app file has downloaded; if the code still fails to start, Swish shows a Reload button instead of an empty screen. The pose model and runtime are kept across updates in their own cache. If the old look sticks, close the app fully and open it again. The deploy workflow copies an explicit list of folders (`.github/workflows/pages.yml`); a new top-level folder must be added there or it will be missing from the live site.
 
 Run locally on a computer (camera works on `localhost`):
 
@@ -32,6 +34,11 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 
 | Path | Purpose |
 |---|---|
+| `js/app.js` | Screens and navigation: profile, home carousel, film (guide + upload/record), trim, analysis, error, report, progress |
+| `js/ui.js` | DOM helpers, screen mounting (focus management), toast, top bar, avatar |
+| `js/guide.js` | Animated player in kit inside a phone screen, side or front view (SVG + SMIL) |
+| `styles.css` | All styling and design tokens; see [`DESIGN.md`](DESIGN.md) |
+| `sw.js` | Service worker: offline shell, network-first app code, cached images and model |
 | `js/shooting.js` | Shot isolation (load → set → release → landing), auto handedness, the 8 metrics, scoring |
 | `js/precheck.js` | Quality checks with specific messages; main-subject selection and the multiple-people rule |
 | `js/pose.js` | MediaPipe wrapper, frame stepping, fps measurement, key-frame grabs |
@@ -39,8 +46,8 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 | `js/report.js`, `js/skeleton.js` | Stories report (score meter, target-zone bars, player-centred crops, scroll cascade), skeleton overlay with shooting arm highlighted |
 | `js/motion.js` | Spring physics: press feedback on every control, the draggable details sheet |
 | `js/icons.js`, `js/tokens.js` | One icon set and the matte basketball; design tokens read from `styles.css` for canvas and SVG |
-| `swish-icons/court.jpg` | Court photo used as the app backdrop (sharp on home, softened elsewhere) |
-| `PRODUCT.md` | Product context for design work |
+| `swish-icons/` | App icons, plus `court.jpg` (backdrop, sharp on home) and `court-soft.jpg` (pre-blurred copy for every other screen) |
+| `PRODUCT.md`, `DESIGN.md` | Product context and the design system, for anyone (or any agent) changing the UI |
 | `js/coaching.js` | What / why / how-to-improve copy and personalised advice (template + optional LLM) |
 | `js/store.js`, `js/progress.js` | Local storage (profiles, scores only) and progress charts |
 | `config/settings.json` | **Editable** reference ranges, metric weights, quality thresholds, LLM proxy URL |
@@ -51,7 +58,7 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 
 ## Tuning
 
-**Weights and ranges** live in `config/settings.json` and take effect on reload, with no rebuild. Bump `VERSION` in `sw.js` only if you change app code. Each range is `good: [min, max]` plus a `tolerance` (how far outside still counts as *borderline*). Metric score = 100 inside the range, 50 at the edge of the tolerance, 0 at twice that.
+**Weights and ranges** live in `config/settings.json` and take effect on reload, with no rebuild. Bump `VERSION` in `sw.js` when you add, rename or remove app files, so the offline copy is rebuilt. Each range is `good: [min, max]` plus a `tolerance` (how far outside still counts as *borderline*). Metric score = 100 inside the range, 50 at the edge of the tolerance, 0 at twice that.
 
 **Reference calibration (§6).** The shipped ranges are textbook **placeholders**. To replace them:
 
@@ -60,11 +67,11 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 3. It runs the same pose + metric code, shows each clip's values and proposes ranges = observed range + buffer.
 4. Paste the JSON into `moves.shooting.ranges` in `config/settings.json`.
 
-**Personalised advice (§2).** Out of the box the advice is template sentences with your numbers (works offline). To use a small LLM instead, deploy `proxy/worker.js` (instructions at the top of the file; the Groq key is a Worker secret, never in client code) and set `llm.proxyUrl`. Only metric numbers are sent. If the proxy fails, the app silently falls back to templates.
+**Personalised advice (§2).** Out of the box the advice is template sentences with your numbers (works offline). To use a small LLM instead, deploy `proxy/worker.js` (instructions at the top of the file; the Groq key is a Worker secret, never in client code) and set `llm.proxyUrl`. Only metric numbers are sent. The proxy only answers your own site (`ALLOWED` at the top of the file: `https://kkotsop.github.io` and `http://localhost:8000`; add any other address you host Swish on) and passes only the expected metric fields to the model. If the proxy fails, the app silently falls back to templates.
 
 ## Metrics (shooting, equal weight by default)
 
-**Side view:** Release angle (0–90°, from the wrist's fastest upward move) · Forward drift · Elbow angle at set · Knee dip (deepest bend) · Release height (fingertip when the ball leaves the hand, estimated; the ball is not tracked) · Follow-through (good from 40°) · Tempo · Off hand. **Front view:** Elbow alignment · Sideways drift · Release height · Tempo · Off hand. Each has a status (good / borderline / needs work), a value, and a high/medium/low tracking-confidence dot from landmark visibility.
+**Side view:** Release angle (0–90°, from the wrist's fastest upward move) · Forward drift · Elbow angle at set · Knee dip (deepest bend) · Release height (fingertip when the ball leaves the hand, estimated; the ball is not tracked) · Follow-through (good from 40°) · Tempo · Off hand. **Front view:** Elbow alignment · Sideways drift · Release height · Tempo · Off hand. Each has a status (good / borderline / needs improvement), a value, and high/medium/low tracking confidence from landmark visibility (shown as signal bars). The overall score is labelled Good from 70, Borderline from 50, Needs improvement below that; the same cut-offs drive the summary text and the score meter.
 
 ## Known limits and things to check on a real iPhone
 
@@ -73,8 +80,9 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 - Ball tracking is approximated from the wrist, as per the spec.
 - Shot isolation scores the **highest** wrist peak in the clip; if you shoot several times in one clip, the best-extended one is used.
 - The player is only accepted if the pose looks like a real, reasonably large person (upright body, good joint visibility, at least ~30% of the frame height). Balls, hoops and tiny far-away figures are ignored; if nobody qualifies you get a specific message.
-- Frame rate is measured by playing the clip (needs Safari 15.4+); if it can't be measured the check is skipped. Variable-frame-rate slow-mo clips can report odd numbers; if a valid clip is rejected, re-export it at a fixed rate.
+- Frame rate is measured by playing the clip off-screen (needs Safari 15.4+); if it can't be measured the check is skipped. iPhone Safari may not decode a clip until it is played, so Swish nudges it with a silent play/pause and gives up with a clear message after 20 s. Variable-frame-rate slow-mo clips can report odd numbers; if a valid clip is rejected, re-export it at a fixed rate.
 - Recorded clips use the camera's reported frame rate. Most iPhones give 60 fps in Safari when asked; if yours reports 30 you'll get a clear message.
-- Analysis steps through the clip by seeking and runs the pose model per frame at `analysisFps` (default 30; set 60 in `config/settings.json` for finer timing at roughly twice the processing time). The next frame is decoded while the current one is processed, and the model is preloaded at app start. The screen shows frame count and time remaining.
-- The look uses frosted glass (`backdrop-filter`) over the court photo; it falls back to solid surfaces when the phone asks for reduced transparency. Motion respects reduced motion.
+- Analysis steps through the clip by seeking and runs the pose model per frame at `analysisFps` (default 30; set 60 in `config/settings.json` for finer timing at roughly twice the processing time). The next frame is decoded while the current one is processed. The model (about 19 MB) is preloaded once you are on the film screen or pick a video, not at app start, so it does not slow down launching; the very first analysis on mobile data waits for that download. The screen shows frame count and time remaining.
+- The report's key frames are grabbed at up to 960 px and cropped to the player. The looping replay reuses the frames the pose model saw (about 290×512 for a portrait clip), so it is softer than the key frames.
+- The look uses frosted glass over the court photo. Only the home cards and the details sheet blur live (`backdrop-filter`); every other screen sits on a pre-blurred copy of the photo, which is much cheaper on an iPhone. Surfaces go solid with **Increase Contrast** (Settings → Accessibility → Display & Text Size); browsers that support the reduced-transparency setting also get solid surfaces (iPhone Safari currently does not). With Reduce Motion, springs, the scroll cascade and pop-ins become simple fades and presses react without a bounce.
 - Saved data lives in the browser's local storage on that phone/profile. Clearing Safari data or removing the app erases history (cloud sync is the spec's phase 2).

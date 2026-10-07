@@ -5,6 +5,7 @@ import { icon, STATUS_ICON } from './icons.js';
 import { spring, project, rubberband } from './motion.js';
 import { reducedMotion } from './tokens.js';
 import { scoreBand } from './coaching.js';
+import { playerBox, fitAspect } from './crop.js';
 
 const STATUS_LABEL = { good: 'Good', borderline: 'Borderline', 'needs-work': 'Needs improvement', unknown: 'Not measured' };
 const CONF_WORD = { high: 'High', medium: 'Medium', low: 'Low' };
@@ -26,9 +27,9 @@ export function fmtValue(m) {
 const unitNote = (m) => ({ shins: ' shins', shoulders: ' shoulders', forearms: ' forearms', 'x height': '× height' })[m.unit] || '';
 const unitSym = (m) => ({ deg: '°', s: 's' })[m.unit] || '';
 
-/** Where your number falls against the target: five zones (red, amber, green, amber, red) with a marker. */
-const marks = []; // markers to place when their slide arrives
-function zoneBar(m, r) {
+/** Where your number falls against the target: five zones (red, amber, green, amber, red) with a marker.
+ *  `marks` collects the markers so each can slide into place when its slide arrives. */
+function zoneBar(m, r, marks) {
   if (!Number.isFinite(m.value) || !r) return null;
   const [lo, hi] = r.good, t = r.tolerance;
   const min = lo <= 0 ? 0 : lo - 2 * t, max = hi + 2 * t;
@@ -50,31 +51,6 @@ function zoneBar(m, r) {
 export function targetText(m, r) {
   const [lo, hi] = r.good, u = unitSym(m), note = unitNote(m);
   return lo <= 0 ? `under ${hi}${u}${note}` : `${lo}–${hi}${u}${note}`;
-}
-
-/** Normalised box around the tracked player across the given landmark sets, with generous room for background and the whole body. */
-function playerBox(lms) {
-  let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
-  for (const lm of lms) for (const [i, p] of (lm || []).entries()) {
-    if (!p || (p.v ?? 1) < (i >= 23 ? 0.15 : 0.3)) continue; // keep hips, knees and feet even when tracking is weaker there
-    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
-  }
-  if (x1 <= x0 || y1 <= y0) return { x: 0, y: 0, w: 1, h: 1 };
-  const w = x1 - x0, h = y1 - y0;
-  x0 = Math.max(0, x0 - w * 0.45); x1 = Math.min(1, x1 + w * 0.45); // room on the sides for the shot and the surroundings
-  y0 = Math.max(0, y0 - h * 0.18); y1 = Math.min(1, y1 + h * 0.12); // headroom above, floor below the feet
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
-/** Widen the box to at least 4:5 (never a narrow strip), staying inside the frame. */
-function fitAspect(box, sw, sh, minAspect = 0.8) {
-  let w = box.w * sw, hgt = box.h * sh, x = box.x * sw, y = box.y * sh;
-  if (w / hgt < minAspect) {
-    const nw = Math.min(sw, hgt * minAspect), cx = x + w / 2;
-    x = Math.max(0, Math.min(sw - nw, cx - nw / 2)); w = nw;
-    if (w / hgt < minAspect) { const nh = w / minAspect, cy = y + hgt / 2; y = Math.max(0, Math.min(sh - nh, cy - nh / 2)); hgt = nh; } // frame too narrow: trim height instead
-  }
-  return { x, y, w, h: hgt };
 }
 
 /** Draw the frame with its overlay, then show the player-centred crop. */
@@ -110,13 +86,15 @@ function replayCard(result) {
   const wrap = h('div', { class: 'frame-wrap rise pop' }, canvas);
   const imgs = frames.map((f) => { const im = new Image(); im.src = f.src; return im; });
   const box = playerBox(frames.map((f) => f.lm)); // one fixed crop for the whole loop so the view does not jump
-  let seen = false;
+  let seen = false, shown = -1, visible = true;
+  if ('IntersectionObserver' in window) new IntersectionObserver((es) => { visible = es[0].isIntersecting; }).observe(wrap); // no redraws while its slide is off screen
   const t0 = performance.now();
   const tick = () => {
     if (canvas.isConnected) seen = true; else if (seen) return;
+    if (!visible) { requestAnimationFrame(tick); return; }
     const i = Math.floor(((performance.now() - t0) / 1000) * fps) % imgs.length;
     const im = imgs[i];
-    if (im.complete && im.naturalWidth) paintCropped(canvas, im, frames[i].lm, box, { hand: result.hand });
+    if (i !== shown && im.complete && im.naturalWidth) { paintCropped(canvas, im, frames[i].lm, box, { hand: result.hand }); shown = i; } // repaint only when the frame changes
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -127,8 +105,8 @@ function replayCard(result) {
 export function showMetricSheet(root, { move, id, result }) {
   const copy = move.copy[id], m = result.metrics[id], r = result.ranges[id];
   const opener = document.activeElement;
-  let y = 0, anim = null, drag = null, closing = false;
-  const height = () => sheet.getBoundingClientRect().height;
+  let y = 0, anim = null, drag = null, closing = false, sheetH = 0;
+  const height = () => sheetH || (sheetH = sheet.getBoundingClientRect().height); // measured once: no layout reads per frame
   const setY = (v) => { // sheet and scrim move together
     y = v; sheet.style.transform = `translateY(${v}px)`;
     bg.style.background = `rgba(0,0,0,${(0.6 * Math.max(0, 1 - Math.max(0, v) / (height() || 1))).toFixed(3)})`;
@@ -140,7 +118,14 @@ export function showMetricSheet(root, { move, id, result }) {
     if (reducedMotion()) return finish();
     anim = spring({ from: y, to: height(), velocity, response: 0.3, damping: 1, onUpdate: setY, onDone: finish });
   };
-  const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') return dismiss();
+    if (e.key !== 'Tab') return; // keep keyboard focus inside the sheet while it is open
+    const f = [...sheet.querySelectorAll('button')];
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  };
 
   const closeBtn = h('button', { class: 'back', onClick: () => dismiss(), 'aria-label': 'Close' }, icon('close'));
   const zone = h('div', { class: 'zone' }, h('div', { class: 'grab' }), h('div', { class: 'head' }, h('h3', {}, copy.name), closeBtn));
@@ -193,11 +178,11 @@ export function showMetricSheet(root, { move, id, result }) {
 }
 
 /** Build the whole report. actions: { onRetry, onProgress, onHome } */
-export function renderReport({ result, move, profile, actions }) {
+export function renderReport({ result, move, profile, actions, saved = true }) {
   const root = h('div', { class: 'stories' });
-  const slides = [];
+  const slides = [], marks = [];
   const ids = result.metricIds || move.metrics;
-  const open = (id) => { buzz(8); showMetricSheet(root, { move, id, result }); };
+  const open = (id) => { if (root.querySelector('.sheet-bg')) return; buzz(8); showMetricSheet(root, { move, id, result }); }; // a double tap must not stack two sheets
   const band = scoreBand(result.score); // same cut-offs as the summary text
 
   // Slide 1: score, quick summary, every metric as a /100 chip.
@@ -217,7 +202,7 @@ export function renderReport({ result, move, profile, actions }) {
     h('div', { class: 'mrail' }, track, mark),
     h('div', { class: 'ticks', 'aria-hidden': 'true' }, h('span', { style: { left: '50%' } }, '50'), h('span', { style: { left: '70%' } }, '70')));
   const hero = h('div', { class: 'hero' },
-    h('div', { class: 'score-row rise' }, h('div', { class: 'score', 'data-score': String(result.score), 'aria-label': `Score ${result.score} out of 100` }, '0'), h('div', { class: 'score-max' }, '/100')),
+    h('div', { class: 'score-row rise' }, h('div', { class: 'score', role: 'img', 'data-score': String(result.score), 'aria-label': `Score ${result.score} out of 100` }, '0'), h('div', { class: 'score-max' }, '/100')),
     h('div', { class: 'rise' }, badge(band, true)),
     meter);
   const first = h('section', { class: 'slide', 'aria-label': 'Score' },
@@ -249,7 +234,7 @@ export function renderReport({ result, move, profile, actions }) {
       h('div', { class: 'rise' }, badge(m.status)),
       result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id, onInfo: () => open(id) }) : null,
       h('div', { class: 'cap rise' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`),
-      factsBlock(m, r), zoneBar(m, r),
+      factsBlock(m, r), zoneBar(m, r, marks),
       h('h4', { class: 'rise' }, 'How to improve'), h('p', { class: 'fix rise' }, result.advice[id]),
       h('h4', { class: 'rise' }, 'Why it matters'), h('p', { class: 'why rise' }, c.why)));
   }
@@ -264,8 +249,8 @@ export function renderReport({ result, move, profile, actions }) {
 
   // Final slide: wrap-up actions.
   slides.push(h('section', { class: 'slide', 'aria-label': 'Saved', style: { justifyContent: 'center' } },
-    h('div', { class: 'cap rise' }, `Saved. Score ${result.score}.`),
-    h('p', { class: 'rise' }, 'The video was not stored.'),
+    h('div', { class: 'cap rise' }, saved ? `Saved. Score ${result.score}.` : `Score ${result.score}. Not saved.`),
+    h('p', { class: 'rise' }, saved ? 'The video was not stored.' : 'This phone\u2019s storage is full, so this score was not added to your progress. The video was not stored.'),
     h('button', { class: 'btn rise', onClick: actions.onRetry }, icon('camera', 22), 'Record another'),
     h('button', { class: 'btn alt rise', onClick: actions.onProgress }, icon('chart', 22), 'See progress'),
     h('button', { class: 'btn ghost rise', onClick: actions.onHome }, 'Home')));
@@ -282,7 +267,7 @@ export function renderReport({ result, move, profile, actions }) {
 
   const countUp = () => {
     const el = first.querySelector('.score'), target = +el.dataset.score, t0 = performance.now();
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = String(target); return; }
+    if (reducedMotion()) { el.textContent = String(target); return; }
     const step = (t) => {
       const u = Math.min(1, (t - t0) / 800);
       el.textContent = String(Math.round(target * (1 - Math.pow(1 - u, 3))));

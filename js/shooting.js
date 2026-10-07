@@ -126,7 +126,8 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const kneeFlex = smoothSeries(frames.map((_, i) => flexAt(i)), 3);
   const bottomFrom = Math.max(0, release - rate(1.6));
   const bottomTo = Math.max(bottomFrom, release - rate(0.1));
-  const bottom = view === 'side' ? argmax(kneeFlex, bottomFrom, bottomTo) : argmax(hipY, bottomFrom, bottomTo);
+  const bottomAt = view === 'side' ? argmax(kneeFlex, bottomFrom, bottomTo) : argmax(hipY, bottomFrom, bottomTo);
+  const bottom = bottomAt >= 0 ? bottomAt : bottomFrom; // no usable knee/hip data in the window: fall back to its start
 
   // Standing baseline for ankles/nose (before the dip) -> body height and takeoff/landing detection.
   const baseTo = Math.max(1, bottom - rate(0.1)), baseFrom = Math.max(0, baseTo - rate(0.6));

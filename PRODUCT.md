@@ -22,9 +22,10 @@ Pose analysis runs entirely on the phone: no server, no per-use cost, video neve
 Record (countdown with beeps, 5 s clip) or upload from Photos (trim to 5 s), a quality pre-check with specific messages, on-device analysis with live tracking preview, then a vertical swipe report. Scores are saved per profile in local storage; Progress shows per-metric trends. Clips must be 60 fps or higher.
 
 ## Capabilities and Constraints
-- Flow: profile, move, camera guide (side or front view), upload or record, pre-check, analysis, report, progress. The user did not pin the flow or copy as fixed, so both are open to redesign where it serves the new look.
+- Flow: one profile (saved once), a moves carousel (only shooting form is live; jab step, layups and crossover are shown as coming soon), one film screen (placement guide with side/front toggle, then upload or record), trim, pre-check, analysis, a Stories-style report, progress.
+- The user prefers simple screens, short copy and visible checks over sentences.
 - Metrics, thresholds and scoring logic live in config/settings.json and js/shooting.js; analysis behaviour is not part of the visual redesign.
-- Status vocabulary: good, borderline, needs work; confidence high/medium/low.
+- Status vocabulary: Good, Borderline, Needs improvement (overall score: Good from 70, Borderline from 50); confidence high/medium/low.
 - Reference ranges are placeholders until calibrated.
 
 ## Brand Commitments
