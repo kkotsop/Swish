@@ -98,18 +98,25 @@ function filmScreen(view = 'side') {
   const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Filming angle' },
     h('button', { class: view === 'side' ? 'on' : '', 'aria-pressed': String(view === 'side'), onClick: () => go(filmScreen, 'side') }, 'From the side'),
     h('button', { class: view === 'front' ? 'on' : '', 'aria-pressed': String(view === 'front'), onClick: () => go(filmScreen, 'front') }, 'From the front'));
-  const pick = h('button', { class: 'btn', onClick: () => input.click() }, icon('upload', 20), 'Choose a video');
+  const pick = h('button', { class: 'btn', onClick: () => { preloadPose(S.config); input.click(); } }, icon('upload', 20), 'Choose a video');
   const actions = h('div', { class: 'stack' }, pick,
     h('button', { class: 'btn alt', onClick: () => go(recordScreen) }, icon('camera', 20), 'Record'),
     S.lastFile ? h('button', { class: 'btn ghost', onClick: () => begin(S.lastFile) }, icon('retry', 18), 'Use the last video again') : null, input);
-  // Once a clip is picked, its first frame replaces the animation and the loader sits right under it.
+  // Once a clip is picked, a still of its first frame replaces the animation and the loader sits under it. The video itself
+  // stays off-screen: frame-rate measurement plays and rewinds it, which showed up as flicker.
   const begin = (file) => {
     actions.classList.add('busy'); tabs.classList.add('busy');
     tipsEl.hidden = true; loader.hidden = false;
+    preloadPose(S.config);
     return startUpload(file, (v) => {
-      v.controls = false; v.muted = true;
-      v.addEventListener('loadeddata', () => { try { v.currentTime = 0.05; } catch { /* first frame is fine */ } }, { once: true });
-      stage.replaceChildren(v); stage.classList.add('has-video');
+      v.addEventListener('loadeddata', () => {
+        try {
+          const s = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+          const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          stage.replaceChildren(c); stage.classList.add('has-video');
+        } catch { /* keep the animation if the frame cannot be read */ }
+      }, { once: true });
     });
   };
   input.addEventListener('change', () => {
@@ -117,7 +124,8 @@ function filmScreen(view = 'side') {
     input.value = ''; // so picking the same video again still fires a change event
     if (f) begin(f);
   });
-  mount(h('div', { class: 'screen' }, topbar(S.move.name, () => go(moveScreen)), tabs, stage, tipsEl, loader, actions));
+  mount(h('div', { class: 'screen' }, topbar(S.move.name, () => go(moveScreen)), tabs, stage, h('div', { class: 'slot' }, tipsEl, loader), actions));
+  setTimeout(() => preloadPose(S.config), 2500); // warm the pose model once the screen has settled, not while you are tapping in
 }
 
 // ---------- 4. Record ----------
@@ -318,7 +326,6 @@ initPress();
 (async function boot() {
   try { S.config = await store.loadConfig(); } catch { mount(h('div', { class: 'screen' }, h('h1', {}, 'Offline'), p5('Could not load settings. Open Swish once with a connection.'))); return; }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-  setTimeout(() => preloadPose(S.config), 1500); // warm up pose model while the user picks a profile/move
   const me = store.listProfiles().find((p) => p.id === store.lastProfileId()) || store.listProfiles()[0];
   if (me) { S.profile = me; moveScreen(); } else profileScreen();
 })();

@@ -39,7 +39,7 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 | `js/report.js`, `js/skeleton.js` | Stories report (score meter, target-zone bars, player-centred crops, scroll cascade), skeleton overlay with shooting arm highlighted |
 | `js/motion.js` | Spring physics: press feedback on every control, the draggable details sheet |
 | `js/icons.js`, `js/tokens.js` | One icon set and the matte basketball; design tokens read from `styles.css` for canvas and SVG |
-| `images/court.jpg` | Court photo used as the app backdrop (sharp on home, softened elsewhere) |
+| `swish-icons/court.jpg` | Court photo used as the app backdrop (sharp on home, softened elsewhere) |
 | `PRODUCT.md` | Product context for design work |
 | `js/coaching.js` | What / why / how-to-improve copy and personalised advice (template + optional LLM) |
 | `js/store.js`, `js/progress.js` | Local storage (profiles, scores only) and progress charts |
