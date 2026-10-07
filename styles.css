@@ -19,8 +19,8 @@ body { position: fixed; inset: 0; overflow: hidden; accent-color: var(--blue); }
 input { caret-color: var(--blue); }
 :focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 #app { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--ink); overflow: hidden; }
-#app::before, #app::after { content: ""; position: absolute; inset: 0; background: url(images/court.jpg) center / cover no-repeat; pointer-events: none; }
-#app::after { filter: blur(22px) saturate(1.15); transform: scale(1.15); opacity: 0; transition: opacity .5s ease; } /* inner screens see a softened version of the same court */
+#app::before, #app::after { content: ""; position: absolute; inset: 0; background: url(swish-icons/court.jpg) center / cover no-repeat; pointer-events: none; }
+#app::after { background-image: url(swish-icons/court-soft.jpg); opacity: 0; transition: opacity .5s ease; } /* inner screens see a pre-softened copy of the same court: no runtime blur */
 #app.soft::after { opacity: 1; }
 #app > * { z-index: 1; }
 .ico { display: inline-grid; place-items: center; flex: none; }
@@ -325,8 +325,7 @@ input[type=text]:focus-visible { border-color: var(--blue); outline: none; }
   .home .move, .home .back, .home .avatar { background: rgba(20,24,40,.9); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
-/* glass surfaces: blur the court behind them and add a lit edge */
-.panel, .chip, .fact, .drop, .hero-stat, .seg, .pill, .btn.alt, .back, .avatar, .metric-row, .tips .pill, input[type=text] { -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%); }
+/* glass surfaces: tinted and lit-edged. They sit on the pre-softened court, so they need no backdrop blur of their own (it was costly on iPhone). */
 .panel, .chip, .fact, .hero-stat, .seg, .pill, .btn.alt, .back, .avatar { box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 0 0 1px rgba(255,255,255,.12); }
 input[type=text] { background: var(--s1); border-color: rgba(255,255,255,.22); }
 .drop { background: color-mix(in srgb, var(--pink) 14%, var(--s1)); border: 1.5px dashed color-mix(in srgb, var(--pink) 70%, transparent); }
@@ -334,8 +333,11 @@ input[type=text] { background: var(--s1); border-color: rgba(255,255,255,.22); }
 .tips .pill .ico { color: var(--pink); }
 @media (prefers-reduced-transparency: reduce) {
   :root { --s1: rgba(16,20,34,.92); --s2: rgba(52,56,72,.95); --s3: rgba(82,86,102,1); }
-  .panel, .chip, .fact, .drop, .hero-stat, .seg, .pill, .btn.alt, .back, .avatar, .metric-row, .tips .pill, input[type=text] { -webkit-backdrop-filter: none; backdrop-filter: none; }
   #app::after { display: none; } .screen { background: rgba(13,14,19,.9); }
 }
 
 .pill, .tips .pill { background: rgba(16,20,34,.5); }
+
+.slot { min-height: 76px; display: flex; align-items: center; justify-content: center; } /* tips and loader share one slot so nothing shifts */
+.stage canvas { width: 100%; height: 100%; object-fit: contain; border-radius: var(--r-lg); background: #000; }
+.home .back, .home .avatar { -webkit-backdrop-filter: blur(16px) saturate(170%); backdrop-filter: blur(16px) saturate(170%); }
