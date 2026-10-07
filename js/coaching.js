@@ -73,6 +73,14 @@ export const SHOOTING_COPY = {
         ? `Your shot takes ${fmt(v, 2)} s; aim for ${r.good[0]}–${r.good[1]} s. Dip and rise in one fluid motion without pausing at the set point.`
         : `Your shot takes ${fmt(v, 2)} s, quicker than the ${r.good[0]}–${r.good[1]} s zone. Slow the load slightly so legs and arm work together.`,
   },
+  guideHand: {
+    name: 'Guide hand', short: 'Off hand',
+    what: 'How close your off hand stays to the ball while it is held and rising, measured in forearm lengths from your shooting hand.',
+    why: 'The off hand should only steady the ball from the side. If it drifts away or hangs low it cannot guide the ball, and if it pushes it adds sidespin and misses left or right.',
+    improve: (v, r, res) => res.status === 'good'
+      ? `Your off hand stays ${fmt(v, 1)} forearms from your shooting hand, close enough to steady the ball from the side.`
+      : `Your off hand is ${fmt(v, 1)} forearms away from your shooting hand; aim for under ${r.good[1]}. Keep it on the side of the ball with fingers up and thumb relaxed, and let it come off as you release.`,
+  },
 };
 
 function fmt(v, d) { return Number(v).toFixed(d); }
@@ -82,7 +90,11 @@ export const COPY = { shooting: SHOOTING_COPY };
 /** Template advice for every metric. Returns { metricId: string }. */
 export function templateAdvice(move, metrics, ranges) {
   const out = {};
-  for (const [id, res] of Object.entries(metrics)) out[id] = COPY[move][id].improve(res.value, ranges[id], res);
+  for (const [id, res] of Object.entries(metrics)) {
+    out[id] = res.status === 'unknown' || !Number.isFinite(res.value)
+      ? `We couldn't measure ${COPY[move][id].name.toLowerCase()} on this clip. Make sure your whole body and shooting arm are clearly visible, side-on, and try again.`
+      : COPY[move][id].improve(res.value, ranges[id], res);
+  }
   return out;
 }
 

@@ -24,7 +24,7 @@ node tests/run.mjs               # unit tests (no dependencies)
 
 ## Using it
 
-Profile → move → camera guide (Skip any time) → **Record** (3/5/10 s countdown with beeps, 5 s clip) or **Upload** (from Photos, then trim to ≤ 5 s) → quality pre-check → analysis (≈5–15 s) → swipeable report. The score is saved to the profile; **Progress** shows per-metric trends.
+Profile → move → camera guide (Skip any time) → **Record** (3/5/10 s countdown with beeps, 5 s clip) or **Upload** (from Photos, then trim to ≤ 5 s) → quality pre-check → analysis (live preview shows the tracked player in a green box with the skeleton) → report you swipe **up/down** like Stories. The score is saved to the profile; **Progress** shows per-metric trends.
 
 Filming tips: phone upright (portrait) at hip height about 3 m away, shooter side-on, whole body in frame, good light, nobody else in the shot. Clips must be **60 fps or higher** (iPhone: Settings → Camera → Record Video → 1080p HD at 60 fps, or use slow-mo 120/240 fps and upload).
 
@@ -60,7 +60,7 @@ Filming tips: phone upright (portrait) at hip height about 3 m away, shooter sid
 
 ## Metrics (shooting, equal weight by default)
 
-Release angle · Forward drift/balance · Elbow angle at set · Knee dip · Elbow alignment · Release height · Follow-through · Shot tempo. Each has a status (good / borderline / needs work), a value, and a high/medium/low tracking-confidence dot from landmark visibility.
+Release angle · Forward drift/balance · Elbow angle at set · Knee dip (deepest bend of the shot) · Elbow alignment · Release height · Follow-through · Shot tempo · Guide (off) hand position. Each has a status (good / borderline / needs work), a value, and a high/medium/low tracking-confidence dot from landmark visibility.
 
 ## Known limits and things to check on a real iPhone
 
@@ -68,6 +68,7 @@ Release angle · Forward drift/balance · Elbow angle at set · Knee dip · Elbo
 - Side-on only: elbow *flare* toward the camera can't be seen in 2D, so *Elbow alignment* measures forearm tilt from vertical instead.
 - Ball tracking is approximated from the wrist, as per the spec.
 - Shot isolation scores the **highest** wrist peak in the clip; if you shoot several times in one clip, the best-extended one is used.
+- The player is only accepted if the pose looks like a real, reasonably large person (upright body, good joint visibility, at least ~30% of the frame height). Balls, hoops and tiny far-away figures are ignored; if nobody qualifies you get a specific message.
 - Frame rate is measured by playing the clip (needs Safari 15.4+); if it can't be measured the check is skipped. Variable-frame-rate slow-mo clips can report odd numbers; if a valid clip is rejected, re-export it at a fixed rate.
 - Recorded clips use the camera's reported frame rate. Most iPhones give 60 fps in Safari when asked; if yours reports 30 you'll get a clear message.
 - Analysis steps through the clip by seeking and runs the pose model per frame at `analysisFps` (default 30; set 60 in `config/settings.json` for finer timing at roughly twice the processing time). The next frame is decoded while the current one is processed, and the model is preloaded at app start. The screen shows frame count and time remaining.

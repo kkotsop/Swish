@@ -9,6 +9,7 @@ import { checkFps, checkOrientation } from './precheck.js';
 import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
 import { lineChart, trend } from './progress.js';
+import { drawSkeleton } from './skeleton.js';
 
 const S = { config: null, profile: null, move: null, cleanup: null, lastFile: null };
 
@@ -195,12 +196,18 @@ async function analyzeScreen(clip) {
   const bar = h('div', { class: 'progress-bar' });
   const status = h('b', { style: { fontSize: '20px' } }, 'Starting…');
   const detail = h('p', { style: { margin: 0 } }, ' ');
+  const preview = h('canvas', { class: 'preview', style: { display: 'none' } });
   mount(h('div', { class: 'screen', style: { justifyContent: 'center', gap: '16px' } },
-    h('div', { class: 'big-num' }, '🏀'), h('h1', {}, 'Analysing'), status, h('div', { class: 'progress-track' }, bar), detail,
+    h('div', { class: 'big-num' }, '🏀'), h('h1', {}, 'Analysing'), status, h('div', { class: 'progress-track' }, bar), detail, preview,
     (() => { const w = clip.fps && checkFps(clip.fps, S.config); return w ? h('div', { class: 'card', style: { borderLeft: '6px solid var(--warn)' } }, h('b', {}, 'Heads up: '), w.message) : null; })(),
     p5('This takes about 5–15 seconds. Your video stays on this phone and is deleted when we finish.')));
   try {
-    const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { status.textContent = t; }, onProgress: (p, info) => { bar.style.width = `${Math.round(p * 100)}%`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · about ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
+    const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { status.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
+      preview.style.display = ''; preview.width = src.width; preview.height = src.height;
+      const ctx = preview.getContext('2d'); ctx.drawImage(src, 0, 0);
+      if (lm) drawSkeleton(ctx, lm, { w: src.width, h: src.height, hand: null });
+    },
+    onProgress: (p, info) => { bar.style.width = `${Math.round(p * 100)}%`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · about ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
     if (!out.ok) return go(errorScreen, out.message);
     go(reportScreen, out.result);
   } catch (e) {

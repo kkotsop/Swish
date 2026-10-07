@@ -2,17 +2,19 @@
 import { h, buzz } from './ui.js';
 import { drawSkeleton, focusJoint } from './skeleton.js';
 
-const STATUS_LABEL = { good: 'Good', borderline: 'Borderline', 'needs-work': 'Needs work' };
+const STATUS_LABEL = { good: 'Good', borderline: 'Borderline', 'needs-work': 'Needs work', unknown: 'Not measured' };
 const CONF_LABEL = { high: 'High tracking confidence', medium: 'Medium tracking confidence', low: 'Low tracking confidence. Treat this number with care.' };
 
 export function fmtValue(m) {
   const v = m.value;
+  if (!Number.isFinite(v)) return '—';
   if (m.unit === 'deg') return `${v.toFixed(0)}°`;
   if (m.unit === 's') return `${v.toFixed(2)}s`;
   if (m.unit === 'shins') return `${v.toFixed(2)}`;
+  if (m.unit === 'forearms') return `${v.toFixed(1)}`;
   return v.toFixed(2);
 }
-const unitNote = (m) => (m.unit === 'shins' ? ' shins' : m.unit === 'x height' ? '× height' : '');
+const unitNote = (m) => (m.unit === 'shins' ? ' shins' : m.unit === 'forearms' ? ' forearms' : m.unit === 'x height' ? '× height' : '');
 
 function frameCanvas(still, { hand, metricId }) {
   const wrap = h('div', { class: 'frame-wrap' });
@@ -58,33 +60,36 @@ export function renderReport({ result, move, profile, actions }) {
   const chips = ids.map((id, i) => {
     const m = result.metrics[id];
     return h('button', { class: `chip ${m.status}`, style: { animationDelay: `${0.05 * i}s` }, onClick: () => open(id), 'aria-label': `${move.copy[id].name} ${fmtValue(m)} ${STATUS_LABEL[m.status]}` },
-      h('i', { class: `conf ${m.confidence}`, title: CONF_LABEL[m.confidence] }),
+      h('i', { class: `conf ${m.confidence}`, title: CONF_LABEL[m.confidence], 'aria-label': CONF_LABEL[m.confidence] }),
       h('b', {}, move.copy[id].short), h('span', {}, fmtValue(m)), h('br'), h('small', {}, STATUS_LABEL[m.status]));
   });
   slides.push(h('section', { class: 'slide' },
     h('div', { class: 'row' }, h('span', { class: 'pill' }, move.name), h('span', { class: 'pill hand' }, result.handAmbiguous ? 'Hand unclear' : `${result.hand === 'right' ? 'Right' : 'Left'} hand`), h('span', { class: 'spacer' }), h('span', { class: 'pill' }, profile.name)),
-    h('div', { class: 'score-row' }, h('div', { class: 'score' }, String(result.score)), h('p', { style: { margin: '0 0 8px', fontWeight: 800 } }, 'Form score\nout of 100')),
+    h('div', { class: 'score-row' }, h('div', { class: 'score' }, String(result.score)), h('div', { class: 'score-max' }, '/100')),
     ...(result.warnings || []).map((w) => h('div', { class: 'card', style: { borderLeft: '6px solid var(--warn)', padding: '10px 14px' } }, h('b', {}, 'Heads up: '), w)),
     result.handAmbiguous ? h('p', {}, 'We could not tell for sure which hand is your shooting hand in this clip, so treat the arm metrics with care.') : null,
     h('div', { class: 'chips' }, chips),
-    h('p', { style: { textAlign: 'center', marginTop: '4px' } }, 'Tap a card for details · swipe for fixes ›')));
+    h('p', { style: { textAlign: 'center', marginTop: '4px' } }, 'Tap a card for details · swipe up for fixes')));
 
   // Issue slides: one per flagged metric, worst first.
   const flagged = ids.filter((id) => result.metrics[id].status !== 'good').sort((a, b) => result.metrics[a].score - result.metrics[b].score);
   for (const id of flagged) {
     const m = result.metrics[id], c = move.copy[id];
     slides.push(h('section', { class: 'slide' },
+      h('span', { class: `flag ${m.status}` }, STATUS_LABEL[m.status]),
       result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id }) : null,
-      h('div', { class: 'cap' }, h('em', {}, STATUS_LABEL[m.status]), h('br'), c.name, ' · ', fmtValue(m)),
-      h('p', { class: 'fix' }, result.advice[id]),
-      h('button', { class: 'btn alt', onClick: () => open(id) }, 'Why it matters')));
+      h('div', { class: 'cap' }, c.name, ' · ', h('em', {}, fmtValue(m))),
+      h('div', { class: 'k' }, 'Why it matters'), h('p', { class: 'why' }, c.why),
+      h('div', { class: 'k' }, 'How to improve'), h('p', { class: 'fix' }, result.advice[id]),
+      h('button', { class: 'more', onClick: () => open(id) }, 'More about this metric ›')));
   }
   if (!flagged.length) {
     const m = result.metrics.releaseAngle;
     slides.push(h('section', { class: 'slide' },
+      h('span', { class: 'flag good' }, 'Good'),
       result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: 'releaseAngle' }) : null,
-      h('div', { class: 'cap' }, h('em', {}, 'Clean form'), h('br'), 'Nothing to fix'),
-      h('p', { class: 'fix' }, 'All eight metrics are in the good zone on this clip. Film a few more shots to check it is repeatable.')));
+      h('div', { class: 'cap' }, 'Clean form'),
+      h('p', { class: 'fix' }, 'Every metric is in the good zone on this clip. Film a few more shots to check it is repeatable.')));
   }
 
   // Final slide: wrap-up actions.
@@ -95,20 +100,14 @@ export function renderReport({ result, move, profile, actions }) {
     h('button', { class: 'btn alt', onClick: actions.onProgress }, 'See progress'),
     h('button', { class: 'btn ghost', onClick: actions.onHome }, 'Home')));
 
-  const bars = h('div', { class: 'bars' }, slides.map(() => h('i')));
+  const bars = h('div', { class: 'bars' }, slides.map(() => h('i'))); // one segment per slide; swipe up/down to move
   const scroller = h('div', { class: 'scroller' }, slides);
   const sync = () => {
-    const i = Math.round(scroller.scrollLeft / scroller.clientWidth);
+    const i = Math.round(scroller.scrollTop / scroller.clientHeight);
     [...bars.children].forEach((b, j) => { b.className = j < i ? 'done' : j === i ? 'on' : ''; });
     if (sync.last !== i) { sync.last = i; if (i === 0 && result.score >= 80) buzz(20); }
   };
   scroller.addEventListener('scroll', sync, { passive: true });
-  // Tap left/right edge to navigate.
-  scroller.addEventListener('click', (e) => {
-    if (e.target.closest('button, .sheet')) return;
-    const x = e.clientX / window.innerWidth;
-    scroller.scrollBy({ left: (x < 0.25 ? -1 : x > 0.75 ? 1 : 0) * scroller.clientWidth, behavior: 'smooth' });
-  });
   root.append(bars, scroller);
   requestAnimationFrame(sync);
   if (result.score >= 80) buzz(25);
