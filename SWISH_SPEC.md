@@ -92,7 +92,7 @@ Each failure has its **own specific, actionable message** — never a generic "b
 
 **Isolate the movement.** Don't assume the whole clip is the move. Detect the actual shooting motion (load → set point → release → landing) within the clip, ignoring catching, hesitation or dead time. This is the trickiest part of the pipeline; give it real attention. Later moves (jab, pump fake) need their own phase detectors.
 
-**Handedness (auto-detected per clip).** Build handedness-aware from the start (left- and right-handed shooters; the user's daughters will use it too). Do **not** store a fixed dominant hand on the profile, because some players shoot with either hand. Instead, detect the shooting hand in each clip (e.g. the wrist that rises above the shoulder and releases the ball, with the other hand as the guide hand) and mirror the metric logic accordingly. Store the detected hand with each session, and show it in the report (§7). If detection is ambiguous (low confidence), say so on the report rather than guessing silently.
+**Handedness (auto-detected per clip).** Build handedness-aware from the start (left- and right-handed shooters, and other players will use it too). Do **not** store a fixed dominant hand on the profile, because some players shoot with either hand. Instead, detect the shooting hand in each clip (e.g. the wrist that rises above the shoulder and releases the ball, with the other hand as the guide hand) and mirror the metric logic accordingly. Store the detected hand with each session, and show it in the report (§7). If detection is ambiguous (low confidence), say so on the report rather than guessing silently.
 
 **Camera angle.** Shooting analysis assumes a **side-on** view.
 
