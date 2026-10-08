@@ -25,7 +25,7 @@ test('right-handed shot: phases, hand, direct metrics', () => {
   near(r.phases.bottom, s.bottomFrame, 4, 'bottom frame');
   near(r.metrics.kneeDip.value, 40, 4, 'knee flexion');
   near(r.metrics.elbowAngle.value, 90, 8, 'elbow at set');
-  near(r.metrics.tempo.value, 1.75 - 1.0, 0.12, 'tempo');
+  near(r.metrics.tempo.value, 1.75 - 1.0, 0.18, 'tempo');
   near(r.metrics.forwardDrift.value, 0.1, 0.05, 'drift');
   assert.equal(r.view, 'side');
   assert.deepEqual(Object.keys(r.metrics).sort(), [...SIDE_METRICS].sort());
@@ -146,13 +146,31 @@ test('a standing clip is flagged as a doubtful shot or rejected, never trusted',
   assert.ok(!r.ok || r.weakShot);
 });
 
-test('stance (front) and foot position (side) are measured', () => {
+test('stance is measured from the front only, and too close is punished harder than too wide', () => {
   const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
   near(front.metrics.stance.value, 0.57, 0.08, 'feet 0.08 apart, shoulders 0.14 apart');
   assert.notEqual(front.metrics.stance.status, 'good'); // too narrow for the 0.9-1.5 zone
-  const side = run({}).r;
-  near(side.metrics.footStagger.value, 0, 0.05, 'feet level in the side synth');
-  assert.equal(side.metrics.footStagger.status, 'good');
+  assert.ok(!('stance' in run({}).r.metrics) && !('footStagger' in run({}).r.metrics), 'no sideways stance from the side');
+  const rg = config.moves.shooting.ranges.stance;
+  const tooClose = scoreValue(rg.good[0] - 0.3, rg), tooWide = scoreValue(rg.good[1] + 0.3, rg);
+  assert.ok(tooClose.score < tooWide.score, `close ${tooClose.score} vs wide ${tooWide.score}`);
+  assert.equal(scoreValue(1.2, rg).status, 'good');
+});
+
+test('a quick shot is never penalised for tempo', () => {
+  const rg = config.moves.shooting.ranges.tempo;
+  for (const t of [0.2, 0.35, 0.5, 0.8, 1.2]) assert.equal(scoreValue(t, rg).status, 'good', `${t}s`);
+  assert.notEqual(scoreValue(1.8, rg).status, 'good');
+  const quick = run({ dipStart: 1.3, dipEnd: 1.5, riseEnd: 1.7 }).r;
+  assert.equal(quick.metrics.tempo.status, 'good', `${quick.metrics.tempo.value}`);
+});
+
+test('release is the arm straightening; follow-through comes after it', () => {
+  const { s, r } = run({});
+  near(r.phases.release, s.releaseFrame, 4, 'release near full extension');
+  assert.ok(r.phases.follow >= r.phases.release, 'follow-through is never before the release');
+  const el = r.phases;
+  assert.ok(el.release > el.set, 'release after the set point');
 });
 
 test('leg-to-arm timing: arm finishing long after the legs is flagged, a close finish is good', () => {

@@ -68,12 +68,10 @@ export const SHOOTING_COPY = {
   tempo: {
     name: 'Shot tempo', short: 'Tempo',
     what: 'The time from starting your load to releasing the ball.',
-    why: 'Too slow gives defenders time to close out. Too rushed breaks your rhythm. A smooth, repeatable tempo builds consistency.',
+    why: 'A slow shot gives defenders time to close out. A quick, smooth shot is never a problem, so only a slow one is flagged.',
     improve: (v, r, res) => res.status === 'good'
-      ? `Your shot takes ${fmt(v, 2)} s from load to release, smooth and repeatable.`
-      : v > r.good[1]
-        ? `Your shot takes ${fmt(v, 2)} s; aim for ${r.good[0]}–${r.good[1]} s. Dip and rise in one fluid motion without pausing at the set point.`
-        : `Your shot takes ${fmt(v, 2)} s, quicker than the ${r.good[0]}–${r.good[1]} s zone. Slow the load slightly so legs and arm work together.`,
+      ? `Your shot takes ${fmt(v, 2)} s from load to release. Quick and smooth.`
+      : `Your shot takes ${fmt(v, 2)} s; aim for under ${r.good[1]} s. Dip and rise in one fluid motion without pausing at the set point.`,
   },
   legArmTiming: {
     name: 'Leg-to-arm timing', short: 'Timing',
@@ -88,20 +86,12 @@ export const SHOOTING_COPY = {
   stance: {
     name: 'Stance width', short: 'Stance',
     what: 'How far apart your feet are before you shoot, compared with your shoulder width (seen from the front).',
-    why: 'Feet about shoulder width apart give a stable base. Too narrow and you wobble, too wide and you lose the power from your legs.',
+    why: 'Feet about shoulder width apart give a stable base. Too close together and you wobble (the bigger problem), too wide and you lose the power from your legs.',
     improve: (v, r, res) => res.status === 'good'
       ? `Your feet are ${fmt(v, 2)} shoulder widths apart, a stable base.`
       : v < r.good[0]
-        ? `Your feet are ${fmt(v, 2)} shoulder widths apart; aim for ${r.good[0]}–${r.good[1]}. Step them out to about shoulder width or a little wider.`
+        ? `Your feet are ${fmt(v, 2)} shoulder widths apart; aim for ${r.good[0]}–${r.good[1]}. Step them out to about shoulder width or a little wider, so you have a steady base.`
         : `Your feet are ${fmt(v, 2)} shoulder widths apart; aim for ${r.good[0]}–${r.good[1]}. Bring them in a little so your legs can push straight up.`,
-  },
-  footStagger: {
-    name: 'Foot position', short: 'Feet',
-    what: 'How far apart your feet are front to back before you shoot, measured in shin lengths (seen from the side).',
-    why: 'A small stagger with the shooting foot slightly ahead lines your hips and shoulders up with the rim. A big split throws you off balance.',
-    improve: (v, r, res) => res.status === 'good'
-      ? `Your feet are ${fmt(v, 2)} shin lengths apart front to back (${res.note}). A balanced base.`
-      : `Your feet are ${fmt(v, 2)} shin lengths apart front to back (${res.note}); aim for under ${r.good[1]}. Narrow the gap and keep your shooting foot just ahead.`,
   },
   sideDrift: {
     name: 'Sideways drift', short: 'Balance',

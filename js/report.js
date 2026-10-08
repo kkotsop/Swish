@@ -30,9 +30,9 @@ const unitSym = (m) => ({ deg: '°', s: 's' })[m.unit] || '';
  *  `marks` collects the markers so each can slide into place when its slide arrives. */
 function zoneBar(m, r, marks) {
   if (!Number.isFinite(m.value) || !r) return null;
-  const [lo, hi] = r.good, t = r.tolerance;
-  const min = lo <= 0 ? 0 : lo - 2 * t, max = hi + 2 * t;
-  const cut = [min, lo - t, lo, hi, hi + t, max].map((v) => Math.max(min, Math.min(max, v)));
+  const [lo, hi] = r.good, [tl, th] = Array.isArray(r.tolerance) ? r.tolerance : [r.tolerance, r.tolerance]; // below / above
+  const min = lo <= 0 ? 0 : lo - 2 * tl, max = hi + 2 * th;
+  const cut = [min, lo - tl, lo, hi, hi + th, max].map((v) => Math.max(min, Math.min(max, v)));
   const kinds = ['needs-work', 'borderline', 'good', 'borderline', 'needs-work'];
   const segs = kinds.map((k, i) => ({ k, w: cut[i + 1] - cut[i] })).filter((x) => x.w > 1e-9);
   const pos = Math.max(0, Math.min(1, (m.value - min) / (max - min)));
