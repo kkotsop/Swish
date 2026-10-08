@@ -63,8 +63,8 @@ export function drawSkeleton(ctx, lm, { w, h, hand, highlight = null, box = true
 export function focusJoint(metricId, hand) {
   const r = hand === 'right';
   return ({
-    releaseAngle: r ? LM.rWrist : LM.lWrist, forwardDrift: LM.rHip, elbowAngle: r ? LM.rElbow : LM.lElbow,
+    releaseAngle: r ? LM.rWrist : LM.lWrist, forwardDrift: LM.rHip,
     kneeDip: LM.rKnee, elbowAlignment: r ? LM.rElbow : LM.lElbow, releaseHeight: r ? LM.rWrist : LM.lWrist,
-    followThrough: r ? LM.rIndex : LM.lIndex, tempo: LM.rHip, guideHand: r ? LM.lWrist : LM.rWrist,
+    tempo: LM.rHip, guideHand: r ? LM.lWrist : LM.rWrist,
   })[metricId];
 }

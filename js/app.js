@@ -261,7 +261,7 @@ function reportScreen(result) {
   const previous = before.length ? before[before.length - 1].score : null;
   const saved = store.addSession({
     id: store.newId(), ts: result.ts, profileId: S.profile.id, move: result.move, hand: result.hand, score: result.score,
-    metrics: Object.fromEntries(Object.entries(result.metrics).map(([id, m]) => [id, { value: m.value, score: m.score, status: m.status }])),
+    metrics: Object.fromEntries(Object.entries(result.metrics).filter(([, m]) => m.status !== 'unknown').map(([id, m]) => [id, { value: m.value, score: m.score, status: m.status }])), // blanks are not saved, so the charts never plot them as 0
   });
   if (!saved) toast('Could not save (storage full?)');
   const jAfter = saved ? myJourney() : jBefore;
@@ -275,7 +275,7 @@ const an = (w) => (/^[AEIOU]/.test(w) ? 'an' : 'a');
 /** One celebration, even when several moments land together (the first video is also the first level). */
 function celebrationText(ev, j) {
   const r = j.rank;
-  const next = r.next ? `${r.toNext} more video${r.toNext === 1 ? '' : 's'} to ${r.next}.` : 'Top of the ladder.';
+  const next = !r.next ? 'Top of the ladder.' : `${r.toNext} more video${r.toNext === 1 ? '' : 's'} to ${r.next}${j.capped ? ', counting from Monday' : ''}.`;
   if (ev.first) return { title: 'First video!', badge: r.name, line: `You're ${an(r.name)} ${r.name}. ${next}` };
   if (ev.rankUp) return { title: `You're ${an(ev.rankUp.to)} ${ev.rankUp.to}!`, badge: ev.rankUp.to, line: `Up from ${ev.rankUp.from}. ${next}` };
   return { title: '5 videos!', badge: r.name, line: `Five sessions in. ${next}` };
@@ -311,9 +311,13 @@ function levelScreen() {
   const j = myJourney(), r = j.rank;
   const head = r.name
     ? [h('div', { class: 'big' }, r.name),
-      r.next ? h('span', { class: 'lbl' }, `${plural(r.toNext, 'video')} to ${r.next}`) : h('span', { class: 'lbl' }, 'Top of the ladder'),
+      !r.next ? h('span', { class: 'lbl' }, 'Top of the ladder')
+        : j.capped ? h('span', { class: 'lbl' }, `${plural(r.toNext, 'video')} to ${r.next}, counting from Monday`)
+          : h('span', { class: 'lbl' }, `${plural(r.toNext, 'video')} to ${r.next}`),
       r.next ? h('div', { class: 'progress-track', role: 'progressbar', 'aria-label': `Progress to ${r.next}`, 'aria-valuenow': String(Math.round(r.frac * 100)) }, h('div', { class: 'progress-bar', style: { transform: `scaleX(${r.frac})` } })) : null,
-      j.total ? h('div', { class: 'perweek' }, h('span', { class: 'lbl' }, 'Videos per week'), weekRow(j)) : null]
+      j.total ? h('div', { class: 'perweek' }, h('span', { class: 'lbl' }, 'Videos per week'), weekRow(j)) : null,
+      j.total ? h('p', { class: 'level-note' }, `Up to ${PER_WEEK} videos a week count towards your level, so regular practice beats one big upload. This week: ${j.thisWeekCounted} of ${PER_WEEK} counted.`,
+        j.ignored ? ` ${plural(j.ignored, 'extra video')} didn\u2019t count (more than ${PER_WEEK} in a week). They are still in your progress.` : '') : null]
     : [h('div', { class: 'big' }, 'Not yet'), h('span', { class: 'lbl' }, 'Film a shot to become a Noobie')];
   const timeline = h('ol', { class: 'timeline' }, LADDER.map((l, i) => h('li', { class: i < r.index ? 'done' : i === r.index ? 'now' : '' },
     h('span', { class: 'node' }, i < r.index ? icon('check', 14) : i === r.index ? icon('ball', 16) : null),

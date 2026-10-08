@@ -9,8 +9,8 @@ export const MOVES = {
     guide: {
       orientation: 'portrait', title: 'Where to film',
       views: {
-        side: { note: 'Best for angles: release, knee bend, balance and follow-through.', steps: ['Stand side-on to the phone. About 3 m (10 ft) away is ideal, but further back (even from the stands) works too.', 'Prop the phone at hip height. Held upright works best, though landscape is fine.', 'Try to get your whole body in the frame, feet to hands overhead.', 'Shoot a few. Keep everyone else out of the shot.'] },
-        front: { note: 'Best for elbow alignment, sideways balance and your off hand.', steps: ['Face the phone, ideally about 3 m (10 ft) away and a little off the line to the basket. Further back works too.', 'Prop the phone at hip height. Held upright works best, though landscape is fine.', 'Try to get your whole body in the frame, feet to hands overhead.', 'Shoot a few. Keep everyone else out of the shot.'] },
+        side: { note: 'Best for angles: release, knee bend and balance.', steps: ['Stand side-on to the phone. About 3 m (10 ft) away is ideal, but further back (even from the stands) works too.', 'Prop the phone at hip height. Held upright works best, though landscape is fine.', 'Try to get your whole body in the frame, feet to hands overhead.', 'Shoot a few. Keep everyone else out of the shot.'] },
+        front: { note: 'Best for elbow alignment and your off hand.', steps: ['Face the phone, ideally about 3 m (10 ft) away and a little off the line to the basket. Further back works too.', 'Prop the phone at hip height. Held upright works best, though landscape is fine.', 'Try to get your whole body in the frame, feet to hands overhead.', 'Shoot a few. Keep everyone else out of the shot.'] },
       },
     },
   },

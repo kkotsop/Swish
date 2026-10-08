@@ -2,6 +2,7 @@
 import { checkFps, assessTracking, selectSubject, MESSAGES } from './precheck.js';
 import { grabFrame, processClip } from './pose.js';
 import { personalisedAdvice } from './coaching.js';
+import { blankMetric } from './shooting.js';
 
 /** clip: { video, start, duration, fps, source:'record'|'upload' } -> { ok, result } | { ok:false, message } */
 export async function runAnalysis({ clip, move, config, onStatus, onProgress, onPreview }) {
@@ -59,6 +60,7 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
   const score = move.headline(analysis.metrics, mcfg.weights);
   const stills = {};
   const lastFrame = subject.frames.length - 1;
+  for (const id of analysis.metricIds) if (!analysis.metrics[id]) analysis.metrics[id] = blankMetric(id, analysis.phases.release); // keep every card, blank where it could not be measured
   for (const m of Object.values(analysis.metrics)) m.frame = Math.max(0, Math.min(lastFrame, Number.isFinite(m.frame) ? m.frame : analysis.phases.release)); // an unmeasured metric still gets a picture
   const sampled = [...stillByFrame.keys()].sort((x, y) => x - y);
   const needed = new Set(Object.values(analysis.metrics).map((m) => m.frame));
@@ -75,7 +77,7 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
   const shaky = tracking.notes.length > 0; // dark, small or crowded clips: every number is less certain
   if (shaky) for (const m of Object.values(analysis.metrics)) m.confidence = lower[m.confidence] || 'low';
   if (fpsCheck) { // timing-sensitive metrics are less trustworthy at low frame rates
-    for (const id of ['releaseAngle', 'followThrough', 'tempo', 'legArmTiming']) {
+    for (const id of ['releaseAngle', 'tempo', 'legArmTiming']) {
       if (analysis.metrics[id] && analysis.metrics[id].confidence === 'high') analysis.metrics[id].confidence = 'medium';
     }
   }

@@ -2,15 +2,25 @@
 // Input frames: [{ t, lm: [{x,y,z,v}] | null }] with x,y normalised to the image (y down).
 //
 // Two camera views are supported and detected automatically:
-//  - side:  best for angles (release angle, elbow at set, knee dip, forward balance, follow-through)
-//  - front: best for left/right things (elbow alignment under the ball, sideways balance, off hand)
+//  - side:  best for angles (release angle, knee dip, forward balance)
+//  - front: best for left/right things (elbow alignment under the ball, off hand)
 // Metrics that cannot be measured reliably from a view are simply not reported for it.
 import { LM, angleAt, argmax, argmin, clamp, deg, dist, fillGaps, mean, median, smoothSeries } from './mathutil.js';
 
-export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'elbowAngle', 'kneeDip', 'releaseHeight', 'followThrough', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
-export const FRONT_METRICS = ['elbowAlignment', 'sideDrift', 'releaseHeight', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
+export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'kneeDip', 'releaseHeight', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
+export const FRONT_METRICS = ['elbowAlignment', 'releaseHeight', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
 export const SHOOTING_METRICS = [...new Set([...SIDE_METRICS, ...FRONT_METRICS])];
 export const metricsForView = (view) => (view === 'front' ? FRONT_METRICS : SIDE_METRICS);
+/** Every card the report shows. A metric the clip could not measure keeps its card, left blank, instead of disappearing. */
+export const displayMetrics = (view) => (view === 'front' ? SHOOTING_METRICS : SIDE_METRICS);
+/** An empty result for a metric this clip could not give: no value, no score, and a line saying how to get one. */
+const BLANK_UNIT = { releaseAngle: 'deg', kneeDip: 'deg', elbowAlignment: 'deg', forwardDrift: 'shins', stance: 'shoulders', legArmTiming: 's', tempo: 's', releaseHeight: 'x height', guideHand: 'forearms' };
+export function blankMetric(id, frame) {
+  const reason = FRONT_METRICS.includes(id) && !SIDE_METRICS.includes(id)
+    ? 'This one is only measured from the front. Film facing the phone to see it.'
+    : 'This one is only measured from the side. Film side-on to see it.';
+  return { id, value: NaN, unit: BLANK_UNIT[id] || '', frame, confidence: 'low', status: 'unknown', score: 0, reason }; // the unit keeps the target text right (45–55°)
+}
 
 /** Build smoothed per-landmark series in aspect-corrected units (x scaled by width/height). */
 function buildSeries(frames, aspect, smoothN) {
@@ -163,10 +173,6 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
     for (let i = bottom; i >= Math.max(0, bottom - rate(1.5)); i--) { if (hipY[i] <= hipBase + 0.15 * dipRange) { loadStart = i; break; } loadStart = i; }
   }
 
-  // Follow-through frame: fingers pointing furthest below the wrist in the 0.4 s after the ball has left.
-  const handDown = ix.map((p, i) => deg(Math.atan2(p.y - wr[i].y, Math.abs(p.x - wr[i].x))));
-  const follow = argmax(handDown, release, Math.min(n - 1, release + rate(0.4)));
-
   const m = {};
   const add = (id, value, unit, frame, names, from, to, extra = {}) => {
     const sc = scoreValue(value, ranges[id]);
@@ -189,15 +195,8 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
       landsAfterRelease: (landing - release) / fps, jumped, note: driftLanding >= 0 ? 'forward' : 'backward',
     });
 
-    // Elbow angle at the set point. A nearly straight arm there means we did not find a real set position.
-    add('elbowAngle', elbowAng[set], 'deg', set, armNames, set - 2, set + 2);
-    if (!setFound || elbowAng[set] > 140) m.elbowAngle.confidence = 'low';
-
     // Knee dip: deepest knee bend of the shot (flexion = 180 - interior angle, averaged over both legs).
     add('kneeDip', kneeFlex[bottom], 'deg', bottom, ['lHip', 'rHip', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle'], bottom - 3, bottom + 3);
-
-    // Follow-through: how far the fingers point toward the floor after release.
-    add('followThrough', handDown[follow], 'deg', follow, [armNames[2], indexName], release, follow);
   } else {
     // Elbow alignment (front only): tilt of the forearm from vertical while the ball rises.
     // 0 = elbow directly under the ball; a big number = elbow flaring out.
@@ -205,10 +204,6 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
     const rEnd = Math.max(set + 1, Math.round(set + 0.6 * (release - set)));
     for (let i = set; i <= Math.min(rEnd, n - 1); i++) tilts.push(deg(Math.atan2(Math.abs(wr[i].x - el[i].x), Math.max(1e-6, el[i].y - wr[i].y))));
     add('elbowAlignment', mean(tilts), 'deg', set, armNames, set, rEnd);
-
-    // Sideways drift: hip travel takeoff -> landing in shoulder widths.
-    const sideways = Math.abs(hipX[landing] - hipX[takeoff]) / (shoulderW || 1);
-    add('sideDrift', sideways, 'shoulders', landing, ['lHip', 'rHip', 'lAnkle', 'rAnkle'], takeoff, landing, { jumped });
   }
 
   // Stance: how far apart the feet are before the dip. Front view: the sideways gap in shoulder widths. Side view: the gap
@@ -256,9 +251,9 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   if (weakShot) for (const id of Object.keys(m)) m[id].confidence = 'low';
   return {
     ok: true, hand, handAmbiguous, weakShot, facing, view, widthRatio,
-    phases: { loadStart, bottom, takeoff, set, release, follow, apex, landing },
+    phases: { loadStart, bottom, takeoff, set, release, apex, landing },
     metrics: m,
-    metricIds: metricsForView(view),
+    metricIds: displayMetrics(view),
     guideHand: hand === 'right' ? 'left' : 'right',
   };
 }

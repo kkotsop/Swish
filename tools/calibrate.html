@@ -52,7 +52,7 @@ $('run').addEventListener('click', async () => {
   }
   const head = `<tr><th>Clip</th><th>fps</th><th>hand</th>${SHOOTING_METRICS.map((m) => `<th>${m}</th>`).join('')}</tr>`;
   $('table').innerHTML = head + rows.map(({ name, fps, r }) => r.ok
-    ? `<tr><td>${name}</td><td>${fps ? fps.toFixed(0) : '?'}</td><td>${r.hand}</td>${SHOOTING_METRICS.map((m) => `<td>${r.metrics[m].value.toFixed(2)}</td>`).join('')}</tr>`
+    ? `<tr><td>${name}</td><td>${fps ? fps.toFixed(0) : '?'}</td><td>${r.hand}</td>${SHOOTING_METRICS.map((m) => `<td>${r.metrics[m] && Number.isFinite(r.metrics[m].value) ? r.metrics[m].value.toFixed(2) : '–'}</td>`).join('')}</tr>`
     : `<tr><td>${name}</td><td colspan="${SHOOTING_METRICS.length + 2}">no shot found (${r.error})</td></tr>`).join('');
   ranges = rangesFromClips(results, SHOOTING_METRICS);
   $('out').textContent = JSON.stringify(ranges, null, 2);

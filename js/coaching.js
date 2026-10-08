@@ -6,8 +6,8 @@ export const CATEGORIES = [
   { id: 'base', name: 'Legs & balance' },
   { id: 'rhythm', name: 'Timing' },
 ];
-const CAT = { releaseAngle: 'shot', elbowAngle: 'shot', elbowAlignment: 'shot', releaseHeight: 'shot', followThrough: 'shot', guideHand: 'shot',
-  kneeDip: 'base', forwardDrift: 'base', sideDrift: 'base', stance: 'base', tempo: 'rhythm', legArmTiming: 'rhythm' };
+const CAT = { releaseAngle: 'shot', elbowAlignment: 'shot', releaseHeight: 'shot', guideHand: 'shot',
+  kneeDip: 'base', forwardDrift: 'base', stance: 'base', tempo: 'rhythm', legArmTiming: 'rhythm' };
 
 export const SHOOTING_COPY = {
   releaseAngle: {
@@ -27,16 +27,6 @@ export const SHOOTING_COPY = {
     improve: (v, r, res) => res.status === 'good'
       ? `You travelled ${fmt(v, 2)} shin lengths ${res.note}. Great balance, you land where you launched.`
       : `You drifted ${fmt(v, 2)} shin lengths ${res.note}; aim for under ${r.good[1]}. Jump straight up, keep your core tight and land on the same spot you took off from.`,
-  },
-  elbowAngle: {
-    name: 'Elbow angle at set', short: 'Set elbow',
-    what: 'The bend in your shooting elbow at the moment you hold the ball ready to shoot.',
-    why: 'A set point that is too tight or too open changes how much the arm has to push, and makes the shot inconsistent.',
-    improve: (v, r, res) => res.status === 'good'
-      ? `Your elbow is at ${fmt(v, 0)}° at the set point, a repeatable L-shape.`
-      : v < r.good[0]
-        ? `Your elbow is bent to ${fmt(v, 0)}° at the set point; aim for ${r.good[0]}–${r.good[1]}°. Open the elbow a little so the ball sits in front of your shooting shoulder.`
-        : `Your elbow is at ${fmt(v, 0)}° at the set point; aim for ${r.good[0]}–${r.good[1]}°. Tuck it in to make a clear L-shape before you extend.`,
   },
   kneeDip: {
     name: 'Knee dip depth', short: 'Knee dip',
@@ -63,16 +53,6 @@ export const SHOOTING_COPY = {
     improve: (v, r, res) => res.status === 'good'
       ? `You release at ${fmt(v, 2)}x your height, comfortably above your head.`
       : `You release at ${fmt(v, 2)}x your height; aim for ${r.good[0]}–${r.good[1]}x. Extend fully and let go at the top, above your forehead.`,
-  },
-  followThrough: {
-    name: 'Follow-through', short: 'Follow',
-    what: 'How far your fingers point toward the floor after the ball leaves your hand.',
-    why: 'A snapped wrist puts backspin on the ball for a soft touch off the rim. A stiff wrist gives a flat, bouncy shot.',
-    improve: (v, r, res) => res.status === 'good'
-      ? `Your fingers snap down to ${fmt(v, 0)}°. Nice finish.`
-      : v < 0
-        ? `Your fingers are still pointing up after release; aim for ${r.good[0]}°+ below horizontal. Snap your wrist down like reaching into the cookie jar and hold the finish.`
-        : `Your fingers only reach ${fmt(v, 0)}° below horizontal; aim for ${r.good[0]}°+. Snap your wrist like reaching into the cookie jar and hold the finish.`,
   },
   tempo: {
     name: 'Shot tempo', short: 'Tempo',
@@ -105,14 +85,6 @@ export const SHOOTING_COPY = {
           : `Your feet are ${fmt(v, 2)} ${u} apart${est}; aim for ${r.good[0]}–${r.good[1]}. Bring them in a little so your legs can push straight up.`;
     },
   },
-  sideDrift: {
-    name: 'Sideways drift', short: 'Balance',
-    what: 'How far your body slides left or right between takeoff and landing, measured in shoulder widths (seen from the front).',
-    why: 'Sliding sideways in the air pulls the ball off line, so it misses left or right. Good shooters land in the same spot they jumped from.',
-    improve: (v, r, res) => res.status === 'good'
-      ? `You moved ${fmt(v, 2)} shoulder widths sideways. Great balance, you land where you launched.`
-      : `You drifted ${fmt(v, 2)} shoulder widths sideways; aim for under ${r.good[1]}. Square your feet to the rim, jump straight up and land in the same spot.`,
-  },
   guideHand: {
     name: 'Guide hand', short: 'Off hand',
     what: 'How close your off hand stays to the ball while it is held and rising, measured in forearm lengths from your shooting hand.',
@@ -136,7 +108,7 @@ export function templateAdvice(move, metrics, ranges) {
   const out = {};
   for (const [id, res] of Object.entries(metrics)) {
     out[id] = res.status === 'unknown' || !Number.isFinite(res.value)
-      ? `We couldn't measure ${COPY[move][id].name.toLowerCase()} on this clip. Make sure your whole body and shooting arm are clearly visible and try again.`
+      ? res.reason || `We couldn't measure ${COPY[move][id].name.toLowerCase()} on this clip. Make sure your whole body and shooting arm are clearly visible and try again.`
       : COPY[move][id].improve(res.value, ranges[id], res);
   }
   return out;
@@ -153,7 +125,7 @@ export async function personalisedAdvice(move, metrics, ranges, cfg, fetchImpl =
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), cfg.llm.timeoutMs || 6000);
   try {
-    const body = { move, metrics: Object.fromEntries(Object.entries(metrics).map(([id, m]) => [id, { name: COPY[move][id].name, value: +Number(m.value).toFixed(2), unit: m.unit, status: m.status, good: ranges[id].good }])) };
+    const body = { move, metrics: Object.fromEntries(Object.entries(metrics).filter(([, m]) => m.status !== 'unknown').map(([id, m]) => [id, { name: COPY[move][id].name, value: +Number(m.value).toFixed(2), unit: m.unit, status: m.status, good: ranges[id].good }])) };
     const res = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
     if (!res.ok) return base;
     const data = await res.json();

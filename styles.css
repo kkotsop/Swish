@@ -465,3 +465,5 @@ input[type=text]:focus-visible { border-color: var(--blue); outline: none; }
   .chips { gap: 6px; } .chipgroups { gap: 6px; } .cat { font-size: 11px; }
 }
 @media (max-height: 700px) { .score { font-size: 48px; } .chip { min-height: 38px; } .chip .conf { top: 6px; } }
+
+.level-note { margin: 14px 0 0; font-size: 14px; line-height: 1.4; color: var(--text-2); text-align: center; text-wrap: balance; }

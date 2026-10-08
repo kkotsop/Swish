@@ -60,7 +60,9 @@ export function journey(sessions, now = Date.now(), span = 8) {
   }
   const weeks = [];
   for (let w = cur - span + 1; w <= cur; w++) weeks.push({ index: w, count: counts.get(w) || 0, state: states.get(w) || 'empty', current: w === cur });
-  return { total, counted, rank: rankFor(counted), streak, best, restHeld: rest, restEarned, weeks, thisWeekCount: counts.get(cur) || 0 };
+  const thisWeekCount = counts.get(cur) || 0;
+  // thisWeekCounted / capped / ignored let the screens say why a level has not moved: videos past PER_WEEK in a week do not count.
+  return { total, counted, ignored: total - counted, rank: rankFor(counted), streak, best, restHeld: rest, restEarned, weeks, thisWeekCount, thisWeekCounted: Math.min(PER_WEEK, thisWeekCount), capped: thisWeekCount >= PER_WEEK };
 }
 
 /**

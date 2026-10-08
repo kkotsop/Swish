@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { analyzeShooting, headlineScore, scoreValue, SIDE_METRICS, FRONT_METRICS } from '../js/shooting.js';
+import { analyzeShooting, headlineScore, scoreValue, SIDE_METRICS, FRONT_METRICS, SHOOTING_METRICS, displayMetrics, blankMetric } from '../js/shooting.js';
 import { makeShot, makeFrontShot, ASPECT } from './synth.js';
 import { selectSubject, assessTracking, checkFps, poseBox } from '../js/precheck.js';
 import { subjectCrop, uncropLandmarks } from '../js/crop.js';
@@ -25,12 +25,11 @@ test('right-handed shot: phases, hand, direct metrics', () => {
   near(r.phases.set, s.setFrame, 8, 'set frame');
   near(r.phases.bottom, s.bottomFrame, 4, 'bottom frame');
   near(r.metrics.kneeDip.value, 40, 4, 'knee flexion');
-  near(r.metrics.elbowAngle.value, 90, 8, 'elbow at set');
   near(r.metrics.tempo.value, 1.75 - 1.0, 0.18, 'tempo');
   near(r.metrics.forwardDrift.value, 0.1, 0.05, 'drift');
   assert.equal(r.view, 'side');
   assert.deepEqual(Object.keys(r.metrics).sort(), [...SIDE_METRICS].sort());
-  assert.equal(r.metrics.followThrough.status, 'good');
+  for (const gone of ['elbowAngle', 'followThrough', 'sideDrift']) assert.equal(r.metrics[gone], undefined, `${gone} was removed`);
   const sc = headlineScore(r.metrics, config.moves.shooting.weights);
   assert.ok(sc > 0 && sc <= 100);
 });
@@ -62,19 +61,17 @@ test('30 fps analysis agrees with 60 fps analysis', () => {
   const lo = analyzeShooting(s30.frames, { aspect: ASPECT, fps: 30, config });
   assert.ok(lo.ok); assert.equal(lo.hand, hi.hand);
   near(lo.metrics.kneeDip.value, hi.metrics.kneeDip.value, 4, 'knee 30 vs 60');
-  near(lo.metrics.elbowAngle.value, hi.metrics.elbowAngle.value, 8, 'elbow 30 vs 60');
   near(lo.metrics.tempo.value, hi.metrics.tempo.value, 0.15, 'tempo 30 vs 60');
   near(lo.metrics.forwardDrift.value, hi.metrics.forwardDrift.value, 0.06, 'drift 30 vs 60');
   near(lo.metrics.releaseAngle.value, hi.metrics.releaseAngle.value, 12, 'release angle 30 vs 60');
   near(lo.metrics.releaseHeight.value, hi.metrics.releaseHeight.value, 0.05, 'release height 30 vs 60');
 });
 
-test('release angle is never negative and elbow-at-set is a real bent elbow', () => {
+test('release angle is never negative', () => {
   for (const o of [{}, { releaseDirDeg: 20 }, { releaseDirDeg: 80 }, { rightHanded: false, mirror: true }, { fps: 30 }]) {
     const { r } = run(o.fps ? {} : o);
     const rr = o.fps ? analyzeShooting(makeShot(o).frames, { aspect: ASPECT, fps: o.fps, config }) : r;
     assert.ok(rr.metrics.releaseAngle.value > 0 && rr.metrics.releaseAngle.value <= 90, `release angle ${rr.metrics.releaseAngle.value}`);
-    assert.ok(rr.metrics.elbowAngle.value < 110, `elbow ${rr.metrics.elbowAngle.value}`);
   }
 });
 
@@ -87,14 +84,6 @@ test('arms held straight up with no bend-to-extend is analysed with low confiden
   const r = analyzeShooting(sh.frames, { aspect: ASPECT, fps: 60, config });
   assert.ok(r.ok && r.weakShot, 'still analysed, but flagged'); // forgiving: low confidence instead of a rejection
   assert.ok(Object.values(r.metrics).every((m) => m.confidence === 'low'));
-});
-
-test('a nearly straight elbow at the set point is never trusted (low confidence)', () => {
-  for (const setElbow of [90, 130, 160, 176]) {
-    const r = run({ setElbow }).r;
-    if (!r.ok) continue;
-    if (r.metrics.elbowAngle.value > 140) assert.equal(r.metrics.elbowAngle.confidence, 'low', `set ${setElbow}`);
-  }
 });
 
 test('knee dip is the deepest bend of the shot', () => {
@@ -117,7 +106,6 @@ test('front view is detected and measures only what it can (elbow alignment, off
   assert.deepEqual(Object.keys(good.metrics).sort(), [...FRONT_METRICS].sort());
   assert.ok(good.metrics.elbowAlignment.value < 12, `alignment ${good.metrics.elbowAlignment.value}`);
   assert.equal(good.metrics.guideHand.status, 'good');
-  assert.ok(good.metrics.sideDrift.value < 0.2);
   const flared = analyzeShooting(makeFrontShot({ setTilt: 40 }).frames, { aspect: ASPECT, fps: 60, config });
   assert.ok(flared.metrics.elbowAlignment.value > good.metrics.elbowAlignment.value + 15, `${flared.metrics.elbowAlignment.value}`);
   const lefty = analyzeShooting(makeFrontShot({ rightHanded: false }).frames, { aspect: ASPECT, fps: 60, config });
@@ -133,12 +121,9 @@ test('static front pose with raised arms is analysed with low confidence', () =>
   assert.ok(r.ok && r.weakShot);
 });
 
-test('follow-through is good from 40 degrees; release height measured where the ball leaves the hand', () => {
-  const { s, r } = run({ followBeta: 45 });
-  assert.equal(r.metrics.followThrough.status, 'good', `${r.metrics.followThrough.value}`);
+test('release height is measured where the ball leaves the hand', () => {
+  const { s, r } = run({});
   near(r.phases.release, s.releaseFrame, 8, 'ball release frame near the arm extension');
-  const weak = run({ followBeta: 10 }).r;
-  assert.notEqual(weak.metrics.followThrough.status, 'good');
 });
 
 test('a standing clip is flagged as a doubtful shot or rejected, never trusted', () => {
@@ -171,10 +156,9 @@ test('a quick shot is never penalised for tempo', () => {
   assert.equal(quick.metrics.tempo.status, 'good', `${quick.metrics.tempo.value}`);
 });
 
-test('release is the arm straightening; follow-through comes after it', () => {
+test('release is the arm straightening', () => {
   const { s, r } = run({});
   near(r.phases.release, s.releaseFrame, 4, 'release near full extension');
-  assert.ok(r.phases.follow >= r.phases.release, 'follow-through is never before the release');
   const el = r.phases;
   assert.ok(el.release > el.set, 'release after the set point');
 });
@@ -194,6 +178,7 @@ test('every metric of every view has copy, advice, a range and a weight', () => 
   const metrics = Object.fromEntries([...new Set([...SIDE_METRICS, ...FRONT_METRICS])].map((id) => [id, { value: 1, unit: '', status: 'borderline', score: 50, signed: 1, note: '' }]));
   const adv = templateAdvice('shooting', metrics, ranges);
   for (const id of Object.keys(metrics)) { assert.ok(ranges[id] && id in weights, id); assert.ok(adv[id].length > 10, id); }
+  for (const id of [...Object.keys(ranges), ...Object.keys(weights)]) assert.ok(id in metrics, `${id} is in the config but is not a metric any more`);
 });
 
 test('scoreValue: good / borderline / needs-work', () => {
@@ -377,6 +362,31 @@ test('clearing the scores keeps the practice log, so level and streak survive', 
   assert.equal(store.activityForProfile('p2').length, 1, 'other profiles untouched');
   store.addSession({ id: 'c', ts: mondayOf(3), profileId: 'p1', move: 'shooting', score: 80, metrics: {} });
   assert.equal(journey(store.activityForProfile('p1'), mondayOf(3)).streak, 4, 'the streak carries on after a clear');
+});
+
+test('every card stays: a metric the view cannot measure is blank, not removed, and does not count toward the score', () => {
+  assert.deepEqual([...displayMetrics('side')].sort(), [...SIDE_METRICS].sort());
+  assert.deepEqual([...displayMetrics('front')].sort(), [...SHOOTING_METRICS].sort());
+  const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
+  assert.deepEqual([...front.metricIds].sort(), [...SHOOTING_METRICS].sort());
+  const blank = blankMetric('releaseAngle', 12);
+  assert.equal(blank.status, 'unknown'); assert.ok(Number.isNaN(blank.value)); assert.equal(blank.frame, 12);
+  assert.match(blank.reason, /side/);
+  assert.match(blankMetric('elbowAlignment', 0).reason, /front/);
+  const weights = config.moves.shooting.weights;
+  assert.equal(headlineScore({ ...front.metrics, releaseAngle: blank }, weights), headlineScore(front.metrics, weights));
+  const adv = templateAdvice('shooting', { releaseAngle: blank }, config.moves.shooting.ranges);
+  assert.equal(adv.releaseAngle, blank.reason);
+});
+
+test('level screen can say why you are stuck: this week is capped, extra videos are counted as ignored', () => {
+  const stuck = journey(inWeeks([0, 9]), mondayOf(0)); // nine videos in one week
+  assert.equal(stuck.counted, 3); assert.equal(stuck.rank.name, 'Rookie'); assert.equal(stuck.rank.toNext, 1);
+  assert.equal(stuck.capped, true); assert.equal(stuck.thisWeekCounted, 3); assert.equal(stuck.ignored, 6);
+  const next = journey(inWeeks([0, 9]), mondayOf(1)); // the following week nothing is capped and the level can move
+  assert.equal(next.capped, false); assert.equal(next.thisWeekCounted, 0); assert.equal(next.ignored, 6);
+  const two = journey(inWeeks([0, 2]), mondayOf(0));
+  assert.equal(two.capped, false); assert.equal(two.ignored, 0);
 });
 
 let passed = 0;

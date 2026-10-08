@@ -12,7 +12,7 @@ const VIEW_LABEL = { side: 'Side view', front: 'Front view' };
 const badge = (status, big = false) => h('span', { class: `flag ${status}${big ? ' big' : ''}` }, icon(STATUS_ICON[status] || 'dash', 14), STATUS_LABEL[status]);
 const confBars = (c) => h('span', { class: `conf ${c}`, role: 'img', 'aria-label': `${CONF_WORD[c]} tracking confidence`, title: `${CONF_WORD[c]} tracking confidence` }, h('i'), h('i'), h('i'));
 const factsBlock = (m, r) => h('div', { class: 'facts rise' }, h('div', { class: 'fact' }, h('span', {}, 'You'), h('b', {}, fmtValue(m) + (m.unit === 'deg' || m.unit === 's' ? '' : unitNote(m)))),
-  h('div', { class: 'fact' }, h('span', {}, 'Target'), h('b', {}, targetText(m, r))), h('span', { class: 'conf-note' }, `${CONF_WORD[m.confidence]} tracking confidence`));
+  h('div', { class: 'fact' }, h('span', {}, 'Target'), h('b', {}, targetText(m, r))), h('span', { class: 'conf-note' }, m.status === 'unknown' ? 'Not measured in this clip' : `${CONF_WORD[m.confidence]} tracking confidence`));
 
 export function fmtValue(m) {
   const v = m.value;
