@@ -99,8 +99,22 @@ function replayCard(result) {
   return wrap;
 }
 
+/** Plain words for the last page: how it went overall, what is strongest, what to work on. */
+function summaryBlock({ result, move, previous }) {
+  const ids = (result.metricIds || move.metrics).filter((id) => result.metrics[id] && result.metrics[id].status !== 'unknown');
+  const name = (id) => move.copy[id].name.toLowerCase();
+  const strong = ids.filter((id) => result.metrics[id].status === 'good').sort((a, b) => result.metrics[b].score - result.metrics[a].score).slice(0, 2).map(name);
+  const work = ids.filter((id) => result.metrics[id].status !== 'good').sort((a, b) => result.metrics[a].score - result.metrics[b].score).slice(0, 2).map(name);
+  const word = { good: 'Good form', borderline: 'Getting there', 'needs-work': 'Plenty to work on' }[scoreBand(result.score)];
+  const diff = previous == null ? null : result.score - previous;
+  const head = `${word}: ${result.score}/100${diff == null ? '' : diff === 0 ? ', same as last time' : `, ${diff > 0 ? 'up' : 'down'} ${Math.abs(diff)} since last time`}.`;
+  return h('div', { class: 'summary rise' }, h('b', {}, head),
+    strong.length ? h('span', { class: 'good' }, icon('check', 18), `Strongest: ${strong.join(' and ')}.`) : null,
+    work.length ? h('span', { class: 'work' }, icon('up', 18), `Work on: ${work.join(' and ')}.`) : h('span', { class: 'good' }, icon('check', 18), 'Everything is in the green. Film a few more shots to check it holds.'));
+}
+
 /** Build the whole report. actions: { onRetry, onProgress, onHome } */
-export function renderReport({ result, move, profile, actions, saved = true }) {
+export function renderReport({ result, move, profile, actions, saved = true, previous = null }) {
   const root = h('div', { class: 'stories' });
   const slides = [], marks = [];
   const ids = result.metricIds || move.metrics;
@@ -151,9 +165,8 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
   for (const id of ordered) {
     const m = result.metrics[id], c = move.copy[id], r = result.ranges[id];
     slides.push(slideOf[id] = h('section', { class: 'slide metric', 'aria-label': c.name },
-      h('div', { class: 'rise' }, badge(m.status)),
+      h('div', { class: 'mhead rise' }, h('div', { class: 'cap' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`), badge(m.status)),
       result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id }) : null,
-      h('div', { class: 'cap rise' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`),
       factsBlock(m, r), zoneBar(m, r, marks),
       h('h4', { class: 'rise' }, m.status === 'good' ? 'Keep it up' : 'How to improve'), h('p', { class: 'fix rise' }, result.advice[id]),
       h('h4', { class: 'rise' }, 'Why it matters'), h('p', { class: 'why rise' }, c.why)));
@@ -162,8 +175,9 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
   // Final slide: wrap-up actions.
   slides.push(h('section', { class: 'slide', 'aria-label': 'Saved', style: { justifyContent: 'center' } },
     h('div', { class: 'cap rise' }, saved ? `Saved. Score ${result.score}.` : `Score ${result.score}. Not saved.`),
+    summaryBlock({ result, move, previous }),
     h('p', { class: 'rise' }, saved ? 'The video was not stored.' : 'This phone\u2019s storage is full, so this score was not added to your progress. The video was not stored.'),
-    h('button', { class: 'btn rise', onClick: actions.onRetry }, icon('camera', 22), 'Record another'),
+    h('button', { class: 'btn rise', onClick: actions.onRetry }, icon('camera', 22), 'Film another'),
     h('button', { class: 'btn alt rise', onClick: actions.onProgress }, icon('chart', 22), 'See progress'),
     h('button', { class: 'btn ghost rise', onClick: actions.onHome }, 'Home')));
 

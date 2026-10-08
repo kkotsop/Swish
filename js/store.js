@@ -22,6 +22,11 @@ export function addSession(s) {
 }
 export const sessionsFor = (profileId, move) => read(K.sessions, []).filter((s) => s.profileId === profileId && s.move === move).sort((a, b) => a.ts - b.ts);
 
+/** Delete every saved session of one move for one profile (the "clear all" button on Progress). */
+export function clearSessions(profileId, move) {
+  return write(K.sessions, read(K.sessions, []).filter((s) => !(s.profileId === profileId && s.move === move)));
+}
+
 /** Downscale a chosen photo to a small square data URL for the avatar. */
 export function resizePhoto(file, size = 160) {
   return new Promise((resolve) => {

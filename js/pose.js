@@ -59,7 +59,7 @@ export function whenReady(video, timeoutMs = 20000) {
     const ok = () => { if (video.readyState >= 2) finish(resolve); };
     const bad = () => finish(() => reject(new Error('Could not read this video.')));
     video.addEventListener('loadeddata', ok); video.addEventListener('canplay', ok); video.addEventListener('error', bad);
-    const kick = setTimeout(() => { if (done) return; nudged = true; video.play().then(() => { if (done) video.pause(); }).catch(() => {}); }, 700);
+    const kick = setTimeout(() => { if (done) return; nudged = true; video.play().then(() => { if (done) video.pause(); }).catch(() => {}); }, 250);
     const limit = setTimeout(() => finish(() => reject(new Error('This video is taking too long to open. Try a shorter clip, or record one in Swish.'))), timeoutMs);
     video.load();
   });
@@ -71,18 +71,17 @@ export function measureFps(video) {
     if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return resolve(null);
     const times = [];
     let finished = false;
-    const finish = async () => {
+    const finish = () => {
       if (finished) return; finished = true;
-      video.pause();
+      video.pause(); // no rewind here: whoever uses the clip next seeks to where it needs to be (a seek can take a second on iPhone)
       const d = times.slice(1).map((t, i) => t - times[i]).filter((x) => x > 0).sort((a, b) => a - b);
-      await seek(video, 0);
-      resolve(d.length >= 4 ? 1 / d[d.length >> 1] : null);
+      resolve(d.length >= 3 ? 1 / d[d.length >> 1] : null);
     };
-    const cb = (_now, meta) => { times.push(meta.mediaTime); if (times.length >= 10) finish(); else video.requestVideoFrameCallback(cb); };
+    const cb = (_now, meta) => { times.push(meta.mediaTime); if (times.length >= 7) finish(); else video.requestVideoFrameCallback(cb); };
     video.requestVideoFrameCallback(cb);
     video.currentTime = 0;
     video.play().catch(() => finish());
-    setTimeout(finish, 1500);
+    setTimeout(finish, 800);
   });
 }
 

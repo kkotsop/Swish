@@ -1,11 +1,11 @@
 // Service worker: the app works offline after the first visit. Bump VERSION when you add, rename or remove app files.
-const VERSION = 'swish-v18';
+const VERSION = 'swish-v19';
 // The pose model and MediaPipe runtime (~20 MB) live in their own cache that survives version bumps: their paths change
 // whenever their content does, so keeping them is safe, and deleting them on every deploy broke offline analysis.
 const HEAVY = 'swish-heavy-1';
 // Core app files: cached all or nothing, so a new version only takes over once it is complete.
 const CORE = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'config/settings.json',
-  'js/app.js', 'js/ui.js', 'js/store.js', 'js/moves.js', 'js/pose.js', 'js/capture.js', 'js/skeleton.js', 'js/report.js', 'js/progress.js',
+  'js/app.js', 'js/ui.js', 'js/store.js', 'js/moves.js', 'js/pose.js', 'js/skeleton.js', 'js/report.js', 'js/progress.js',
   'js/guide.js', 'js/icons.js', 'js/motion.js', 'js/tokens.js', 'js/crop.js', 'js/analyze.js', 'js/mathutil.js', 'js/shooting.js', 'js/precheck.js', 'js/coaching.js'];
 // Nice to have offline; a missing one must not block an update.
 const EXTRAS = ['swish-icons/icon-192.png', 'swish-icons/apple-touch-icon.png', 'swish-icons/court.jpg', 'swish-icons/court-soft.jpg'];

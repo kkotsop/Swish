@@ -32,8 +32,9 @@ export function toast(msg) {
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2200);
 }
 export const buzz = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch { /* not supported on iOS Safari */ } };
-export function topbar(title, onBack) {
-  return h('header', { class: 'topbar' }, onBack ? h('button', { class: 'back', onClick: onBack, 'aria-label': 'Back' }, icon('back')) : null, h('h2', { 'data-focus': '' }, title));
+/** `quiet`: keep the title for screen readers and focus, but show only the back button. */
+export function topbar(title, onBack, quiet = false) {
+  return h('header', { class: 'topbar' }, onBack ? h('button', { class: 'back', onClick: onBack, 'aria-label': 'Back' }, icon('back')) : null, h('h2', { class: quiet ? 'sr' : null, 'data-focus': '' }, title));
 }
 export function initials(name) { return (name || '?').trim().slice(0, 1).toUpperCase(); }
 export function avatar(profile, size) {

@@ -1,9 +1,8 @@
 // Swish app shell: screens and navigation. State lives in `S`; every screen is a function that mounts into #app.
-import { h, mount, toast, topbar, avatar, buzz } from './ui.js';
+import { h, mount, toast, topbar, avatar, buzz, initials } from './ui.js';
 import * as store from './store.js';
 import { MOVES } from './moves.js';
 import { guideSvg } from './guide.js';
-import { beep, openCamera, orientationNow, recordFor, stopStream, unlockAudio } from './capture.js';
 import { makeVideo, measureFps, preloadPose, whenReady } from './pose.js';
 import { checkFps } from './precheck.js';
 import { runAnalysis } from './analyze.js';
@@ -21,35 +20,55 @@ function go(screen, ...args) {
   screen(...args);
 }
 
-// ---------- 1. Profile (one player, saved once) ----------
-function profileScreen() {
-  let photo = null;
-  const name = h('input', { type: 'text', placeholder: 'Your name', maxlength: 24, 'aria-label': 'Your name', autocomplete: 'off', enterkeyhint: 'done', onKeydown: (e) => { if (e.key === 'Enter') create.click(); } });
-  const preview = h('span', { class: 'ico-slot' }, icon('plus'));
+// ---------- 1. Profile (one player, saved once; the same screen edits it later) ----------
+function profileScreen(editing = false) {
+  const me = editing ? S.profile : null;
+  let photo = me ? me.photo : null;
+  const name = h('input', { type: 'text', placeholder: 'Your name', maxlength: 24, 'aria-label': 'Your name', autocomplete: 'off', enterkeyhint: 'done', value: me ? me.name : null, onKeydown: (e) => { if (e.key === 'Enter') save.click(); } });
+  const initial = () => (me && me.name ? initials(me.name) : null);
+  const paint = () => {
+    preview.replaceChildren(photo ? h('img', { src: photo, alt: '' }) : (initial() || icon('plus')));
+    if (remove) remove.hidden = !photo;
+  };
+  const preview = h('span', { class: 'ico-slot' });
   const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' }, onChange: async (e) => {
     const f = e.target.files[0]; if (!f) return;
-    photo = await store.resizePhoto(f);
-    preview.replaceChildren(photo ? h('img', { src: photo, alt: '' }) : icon('plus'));
+    const resized = await store.resizePhoto(f);
+    if (resized) photo = resized; else toast('Could not read that photo');
+    paint();
+    e.target.value = '';
   } });
-  const create = h('button', { class: 'btn', onClick: () => {
+  const remove = editing ? h('button', { class: 'btn ghost', onClick: () => { photo = null; paint(); } }, 'Remove photo') : null;
+  const save = h('button', { class: 'btn', onClick: () => {
     const n = name.value.trim();
     if (!n) return toast('Enter your name first');
-    const p = { id: store.newId(), name: n, photo };
-    store.saveProfile(p); S.profile = p; store.setLastProfile(p.id); go(moveScreen);
-  } }, 'Continue');
+    const p = me ? { ...me, name: n, photo } : { id: store.newId(), name: n, photo };
+    if (!store.saveProfile(p)) return toast('Could not save (storage full?)');
+    S.profile = p; store.setLastProfile(p.id);
+    if (editing) toast('Saved');
+    go(moveScreen);
+  } }, editing ? 'Save' : 'Continue');
+  const picker = h('button', { class: `avatar${editing ? ' big' : ' add'}`, onClick: () => file.click(), 'aria-label': photo ? 'Change photo' : 'Choose photo' }, preview, editing ? h('span', { class: 'cam-badge' }, icon('camera', 18)) : null);
+  paint();
+  if (editing) {
+    mount(h('div', { class: 'screen' }, topbar('Your profile', () => go(moveScreen)),
+      h('div', { class: 'edit-photo' }, picker, h('button', { class: 'btn alt small', onClick: () => file.click() }, photo ? 'Change photo' : 'Add a photo')),
+      h('label', { class: 'field' }, h('span', {}, 'Name'), name), remove, file, h('div', { class: 'spacer' }), save));
+    return;
+  }
   mount(h('div', { class: 'screen' },
     h('div', { class: 'brand' }, h('img', { src: 'swish-icons/icon-192.png', alt: '' }), h('b', {}, 'Swish')),
     h('h1', { 'data-focus': '' }, 'Who\u2019s shooting?'),
     h('p', {}, 'Everything stays on this phone.'),
-    h('div', { class: 'row' }, h('button', { class: 'avatar add', onClick: () => file.click(), 'aria-label': 'Choose photo' }, preview), name),
-    file, h('div', { class: 'spacer' }), create));
+    h('div', { class: 'row' }, picker, name),
+    file, h('div', { class: 'spacer' }), save));
 }
 
 // ---------- 2. Move ----------
 function topRow() {
   return h('div', { class: 'brand' }, h('img', { src: 'swish-icons/icon-192.png', alt: '' }), h('b', {}, 'Swish'),
     h('button', { class: 'back push', onClick: () => go(progressScreen, MOVES.shooting), 'aria-label': 'Progress' }, icon('chart', 22)),
-    avatar(S.profile, 40));
+    h('button', { class: 'avatar-btn', onClick: () => go(profileScreen, true), 'aria-label': 'Your profile' }, avatar(S.profile, 40)));
 }
 
 function moveScreen() {
@@ -90,28 +109,28 @@ function moveScreen() {
   requestAnimationFrame(depth);
 }
 
-// ---------- 3. Film: where to stand, then upload or record, on one screen ----------
+// ---------- 3. Film: where to stand (one looping guide), then pick or record a video, on one screen ----------
 /** `file`: start reading this clip straight away (used by "Try this video again"). */
-function filmScreen(view = 'side', file = null) {
+function filmScreen(file = null) {
+  // iOS offers "Take Video", "Photo Library" and "Choose File" for a video picker, so one button covers recording too.
   const input = h('input', { type: 'file', accept: 'video/*', style: { display: 'none' } });
-  const stage = h('div', { class: 'stage' }, guideSvg(view));
+  const stage = h('div', { class: 'stage' }, guideSvg());
   const tipsEl = tips();
-  const loader = h('div', { class: 'loader', hidden: true, role: 'status' }, h('div', { class: 'bar' }, h('i')), h('p', {}, 'Reading your video…'));
-  const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Filming angle' },
-    h('button', { class: view === 'side' ? 'on' : '', 'aria-pressed': String(view === 'side'), onClick: () => go(filmScreen, 'side') }, 'From the side'),
-    h('button', { class: view === 'front' ? 'on' : '', 'aria-pressed': String(view === 'front'), onClick: () => go(filmScreen, 'front') }, 'From the front'));
+  const loaderBar = h('div', { class: 'progress-bar' });
+  const loader = h('div', { class: 'loader', hidden: true, role: 'status' }, h('div', { class: 'progress-track' }, loaderBar), h('p', {}, 'Reading your video…'));
   const pick = h('button', { class: 'btn', onClick: () => { preloadPose(S.config); input.click(); } }, icon('upload', 20), 'Choose a video');
   const actions = h('div', { class: 'stack' }, pick,
-    h('button', { class: 'btn alt', onClick: () => go(recordScreen) }, icon('camera', 20), 'Record'),
     S.lastFile ? h('button', { class: 'btn ghost', onClick: () => begin(S.lastFile) }, icon('retry', 18), 'Use the last video again') : null, input);
-  // Once a clip is picked, a still of its first frame replaces the animation and the loader sits under it. The video itself
-  // stays off-screen: frame-rate measurement plays and rewinds it, which showed up as flicker.
+  // Once a clip is picked, a still of its first frame replaces the animation and a progress bar sits under it. The analysis
+  // screen keeps the same layout and carries the bar on from here, so the hand-over does not look like a restart.
   const begin = (file) => {
-    actions.classList.add('busy'); tabs.classList.add('busy');
+    S.reserve = actions.offsetHeight;
+    actions.classList.add('busy');
     tipsEl.hidden = true; loader.hidden = false;
+    requestAnimationFrame(() => { loaderBar.style.transform = `scaleX(${READ_SHARE})`; });
     preloadPose(S.config);
     return startUpload(file, (v) => {
-      const poster = () => {
+      v.addEventListener('loadeddata', () => {
         if (!v.videoWidth || !stage.isConnected) return;
         try {
           const s = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
@@ -119,9 +138,7 @@ function filmScreen(view = 'side', file = null) {
           c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
           stage.replaceChildren(c); stage.classList.add('has-video'); v.poster_ = c;
         } catch { /* keep the animation if the frame cannot be read */ }
-      };
-      v.addEventListener('loadeddata', poster, { once: true });
-      v.addEventListener('seeked', poster, { once: true }); // the fps check rewinds to the start: a frame iOS has surely painted
+      }, { once: true });
     }, () => stage.isConnected);
   };
   input.addEventListener('change', () => {
@@ -129,85 +146,14 @@ function filmScreen(view = 'side', file = null) {
     input.value = ''; // so picking the same video again still fires a change event
     if (f) begin(f);
   });
-  mount(h('div', { class: 'screen' }, topbar(S.move.name, () => go(moveScreen)), tabs, stage, h('div', { class: 'slot' }, tipsEl, loader), actions));
+  mount(h('div', { class: 'screen' }, topbar('Film your shot', () => go(moveScreen), true), stage, h('div', { class: 'slot' }, tipsEl, loader), actions));
   if (file) begin(file);
   else setTimeout(() => preloadPose(S.config), 2500); // warm the pose model once the screen has settled, not while you are tapping in
 }
+const READ_SHARE = 0.1; // the share of the progress bar that "reading the video" takes; analysis fills the rest
 
-// ---------- 4. Record ----------
-function recordScreen() {
-  const body = h('div', { style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '12px' } });
-  mount(h('div', { class: 'screen' }, topbar('Record a shot', () => go(filmScreen)), body));
-  recordPane(body);
-}
-const captureScreen = (tab = 'upload') => (tab === 'record' ? recordScreen() : filmScreen());
-
-/** The three filming checks shown on the film and record screens. */
+/** The three filming checks shown on the film screen. */
 const tips = () => h('div', { class: 'tips' }, ['Full body in frame', 'Good light', 'Closer is better'].map((t) => h('span', { class: 'pill' }, icon('check', 14), t)));
-
-/** The camera (and its permission prompt) is only started once the user taps "Open camera". */
-function recordPane(body) {
-  const intro = h('div', { class: 'tile-wrap' },
-    h('div', { class: 'drop' },
-      h('span', { class: 'drop-ico' }, icon('camera', 34)),
-      h('h2', {}, 'Record a shot'),
-      p5('Camera opens when you tap. Nothing records until you press Record.'),
-      h('button', { class: 'btn', onClick: () => { intro.remove(); startRecorder(body); } }, icon('camera', 20), 'Open camera')),
-    tips());
-  body.append(intro);
-}
-
-async function startRecorder(body) {
-  let stream = null, busy = false, countdown = 5, gone = false; // `gone`: the user left this screen
-  const video = h('video', { autoplay: true, muted: true, playsinline: true });
-  video.muted = true;
-  const count = h('div', { class: 'count' });
-  const badge = h('div', { class: 'rec', style: { display: 'none' } }, 'REC');
-  const overlay = h('div', { class: 'overlay-msg', style: { display: 'none' } });
-  const cam = h('div', { class: 'cam' }, video, h('div', { class: 'frame-guide' }), count, badge, overlay);
-  const opts = [3, 5, 10].map((n) => h('button', { class: n === countdown ? 'on' : '', onClick: (e) => { countdown = n; [...e.target.parentNode.children].forEach((b) => b.classList.toggle('on', b === e.target)); } }, `${n}s`));
-  const recBtn = h('button', { class: 'btn', disabled: true }, icon('record', 22), 'Record');
-  body.append(cam, h('div', { class: 'row' }, h('b', {}, 'Countdown'), h('div', { class: 'seg spacer' }, opts)), recBtn);
-
-  // Portrait is recommended (see the guide) but either way is accepted: the camera opens in however the phone is held.
-  const syncOrientation = () => { recBtn.disabled = busy || !stream; };
-  S.cleanup = () => { gone = true; stopStream(stream); };
-
-  try {
-    stream = await openCamera(orientationNow());
-    if (gone) { stopStream(stream); return; } // left before the camera opened
-    video.srcObject = stream;
-    await video.play().catch(() => {});
-    syncOrientation();
-  } catch (e) {
-    if (gone) return;
-    overlay.style.display = 'grid'; overlay.textContent = e.message;
-  }
-
-  recBtn.addEventListener('click', async () => {
-    if (busy) return;
-    busy = true; recBtn.disabled = true; unlockAudio();
-    const track = stream.getVideoTracks()[0];
-    const settings = track.getSettings ? track.getSettings() : {};
-    for (let n = countdown; n > 0; n--) { if (gone) return; count.textContent = String(n); beep(660, 140); await new Promise((r) => setTimeout(r, 1000)); }
-    if (gone) return;
-    count.textContent = '';
-    try {
-      const secs = S.config.clipSeconds;
-      const blob = await recordFor(stream, secs, { onStart: () => { beep(1200, 260, 0.35); badge.style.display = ''; }, onStop: () => { beep(500, 260, 0.35); badge.style.display = 'none'; } });
-      stopStream(stream); stream = null;
-      S.lastFile = null;
-      const v = makeVideo(blob);
-      await whenReady(v);
-      if (gone) return;
-      go(analyzeScreen, { video: v, start: 0, duration: Math.min(secs, v.duration || secs), fps: settings.frameRate || null, source: 'record' });
-    } catch (e) {
-      if (gone) return; // stopping the camera on the way out is not an error
-      busy = false; recBtn.disabled = false; count.textContent = '';
-      go(errorScreen, e.message);
-    }
-  });
-}
 
 /** Read an uploaded file and route it to trim or analysis. Used by the picker and by "try this clip again". */
 async function startUpload(file, onVideo, stillHere = () => true) {
@@ -247,7 +193,7 @@ function trimScreen(clip) {
   S.cleanup = () => { stopPreview(); v.pause(); if (!toAnalysis) URL.revokeObjectURL(v.src); }; // analysis releases it when done
   const play = h('button', { class: 'btn alt', onClick: () => { stopPreview(); v.currentTime = a; v.play().catch(() => {}); timer = setInterval(() => { if (v.currentTime >= b || v.paused) { v.pause(); stopPreview(); } }, 50); } }, icon('play', 20), 'Preview');
   paint(); v.currentTime = 0;
-  mount(h('div', { class: 'screen trim' }, topbar('Pick the shot', () => go(captureScreen, 'upload')),
+  mount(h('div', { class: 'screen trim' }, topbar('Pick the shot', () => go(filmScreen)),
     p5(`Choose up to ${MAXW} seconds that include the whole shot: load, jump and release.`), v,
     h('div', { class: 'range' }, h('div', { class: 'track' }), win, ia, ib), h('div', { style: { textAlign: 'center' } }, label),
     h('div', { class: 'spacer' }), h('div', { class: 'stack' }, play,
@@ -256,25 +202,28 @@ function trimScreen(clip) {
 const p5 = (t) => h('p', {}, t);
 
 // ---------- 6. Analysis ----------
+// Same layout as the film screen (picture on top, bar under it) and the bar carries on from where reading the video left it.
 async function analyzeScreen(clip) {
-  const bar = h('div', { class: 'progress-bar' });
-  const status = h('h2', { 'data-focus': '' }, 'Analysing');
+  const bar = h('div', { class: 'progress-bar', style: { transform: `scaleX(${READ_SHARE})`, transition: 'none' } });
+  const status = h('h2', { class: 'sr', 'data-focus': '', 'aria-live': 'polite' }, 'Analysing your shot');
   const detail = h('p', {}, 'Starting…');
-  const preview = h('canvas', { class: 'preview', style: { display: 'none' }, role: 'img', 'aria-label': 'Live view of the player being tracked' });
   const warn = clip.fps && checkFps(clip.fps, S.config);
-  const still = clip.poster && !(clip.start > 0) ? clip.poster : null; // the frame you just saw on the film screen stays up, so the hand-over to analysis does not flash a new loader
-  if (still) still.className = 'preview';
-  mount(h('div', { class: 'screen', style: { alignItems: 'center', textAlign: 'center' } },
-    h('div', { class: 'spacer' }), still || throwSvg(), status, h('div', { class: 'progress-track', style: { width: '100%' }, role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail, preview, h('div', { class: 'spacer' }),
+  const still = clip.poster && !(clip.start > 0) ? clip.poster : null; // the frame you just saw stays up; after a trim it would be the wrong moment
+  const preview = h('canvas', { style: { display: 'none' }, role: 'img', 'aria-label': 'Live view of the player being tracked' });
+  const stage = h('div', { class: `stage${still ? ' has-video' : ''}` }, still || throwSvg(), preview);
+  mount(h('div', { class: 'screen' }, h('header', { class: 'topbar' }, status), stage,
+    h('div', { class: 'slot' }, h('div', { class: 'loader' }, h('div', { class: 'progress-track', role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail)),
+    h('div', { style: { height: `${S.reserve || 48}px`, flex: 'none' } }), // the film screen's buttons were here: keep the picture the same size
     warn ? h('div', { class: 'tiny-note' }, icon('alert', 14), warn.message) : null));
+  requestAnimationFrame(() => { bar.style.transition = ''; });
   try {
     const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
-      if (still) still.style.display = 'none';
-      preview.style.display = ''; preview.width = src.width; preview.height = src.height;
+      stage.replaceChildren(preview); stage.classList.add('has-video'); preview.style.display = '';
+      preview.width = src.width; preview.height = src.height;
       const ctx = preview.getContext('2d'); ctx.drawImage(src, 0, 0);
       if (lm) drawSkeleton(ctx, lm, { w: src.width, h: src.height, hand: null });
     },
-    onProgress: (p, info) => { bar.style.transform = `scaleX(${Math.max(0, Math.min(1, p))})`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · ${Math.max(1, Math.round(info.etaSec))}s left` : ''}${info.done > 6 ? ` · ${info.modelMs} ms/frame` : ''}`; } });
+    onProgress: (p, info) => { bar.style.transform = `scaleX(${READ_SHARE + (1 - READ_SHARE) * Math.max(0, Math.min(1, p))})`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
     if (!out.ok) return go(errorScreen, out.message);
     go(reportScreen, out.result);
   } catch (e) {
@@ -291,21 +240,22 @@ function errorScreen(message) {
     h('h1', {}, 'Hold up'),
     h('div', { class: 'panel err' }, h('b', { style: { fontSize: '17px', lineHeight: 1.35 } }, message)),
     h('div', { class: 'stack' },
-      S.lastFile ? h('button', { class: 'btn', onClick: () => go(filmScreen, 'side', S.lastFile) }, icon('retry', 22), 'Try this video again') : null,
-      h('button', { class: S.lastFile ? 'btn alt' : 'btn', onClick: () => go(captureScreen, 'upload') }, 'Choose another video'),
-      h('button', { class: 'btn alt', onClick: () => go(captureScreen, 'record') }, 'Record a new one'),
+      S.lastFile ? h('button', { class: 'btn', onClick: () => go(filmScreen, S.lastFile) }, icon('retry', 22), 'Try this video again') : null,
+      h('button', { class: S.lastFile ? 'btn alt' : 'btn', onClick: () => go(filmScreen) }, 'Choose another video'),
       h('button', { class: 'btn ghost', onClick: () => go(moveScreen) }, 'Home'))));
 }
 
 // ---------- 7 + 8. Report (+ save) ----------
 function reportScreen(result) {
+  const before = store.sessionsFor(S.profile.id, result.move);
+  const previous = before.length ? before[before.length - 1].score : null;
   const saved = store.addSession({
     id: store.newId(), ts: result.ts, profileId: S.profile.id, move: result.move, hand: result.hand, score: result.score,
     metrics: Object.fromEntries(Object.entries(result.metrics).map(([id, m]) => [id, { value: m.value, score: m.score, status: m.status }])),
   });
   if (!saved) toast('Could not save (storage full?)');
-  mount(renderReport({ result, move: S.move, profile: S.profile, saved, actions: {
-    onRetry: () => go(captureScreen, 'upload'), onProgress: () => go(progressScreen, S.move), onHome: () => go(moveScreen) } }));
+  mount(renderReport({ result, move: S.move, profile: S.profile, saved, previous, actions: {
+    onRetry: () => go(filmScreen), onProgress: () => go(progressScreen, S.move), onHome: () => go(moveScreen) } }));
 }
 
 // ---------- 10. Progress ----------
@@ -313,6 +263,20 @@ function deltaBadge(dt, suffix = '') {
   if (dt == null) return h('span', {});
   const up = dt > 0, down = dt < 0;
   return h('span', { class: `delta ${up ? 'up' : down ? 'down' : ''}` }, up ? icon('up', 16) : down ? icon('down', 16) : icon('dash', 16), `${up ? '+' : down ? '\u2212' : ''}${Math.abs(dt)}${suffix}`);
+}
+
+/** One button wipes every entry. It asks for a second tap (it cannot be undone) instead of opening a dialog. */
+function clearAllButton(move) {
+  let armed = 0;
+  const label = (t) => btn.replaceChildren(icon('trash', 18), t);
+  const btn = h('button', { class: 'btn ghost danger', onClick: () => {
+    if (!armed) { label('Tap again to delete everything'); armed = setTimeout(() => { armed = 0; label('Clear all entries'); }, 4000); return; }
+    clearTimeout(armed);
+    if (!store.clearSessions(S.profile.id, move.id)) return toast('Could not clear (storage problem)');
+    buzz(15); toast('All entries cleared'); go(progressScreen, move);
+  } });
+  label('Clear all entries');
+  return btn;
 }
 
 function progressScreen(move) {
@@ -331,8 +295,9 @@ function progressScreen(move) {
         h('div', { class: 'lbl' }, 'Overall score'), h('div', { class: 'big' }, String(overall[overall.length - 1].v)),
         d == null ? h('span', { class: 'lbl' }, `${sessions.length} session`) : h('span', { class: 'delta' }, d > 0 ? icon('up', 16) : d < 0 ? icon('down', 16) : icon('dash', 16), `${d > 0 ? '+' : d < 0 ? '\u2212' : ''}${Math.abs(d)} since last`),
         lineChart(overall, { height: 120, color: token('--pink') })),
-      h('div', { class: 'stack' }, rows)]
-      : [h('div', { class: 'panel stack' }, h('h2', {}, 'No sessions yet'), p5(`Record your first ${move.name.toLowerCase()} clip to start tracking.`), h('button', { class: 'btn', onClick: () => { S.move = move; go(filmScreen); } }, icon('camera', 22), 'Record now'))]));
+      h('div', { class: 'stack' }, rows),
+      clearAllButton(move)]
+      : [h('div', { class: 'panel stack' }, h('h2', {}, 'No sessions yet'), p5(`Film your first ${move.name.toLowerCase()} clip to start tracking.`), h('button', { class: 'btn', onClick: () => { S.move = move; go(filmScreen); } }, icon('camera', 22), 'Film a shot'))]));
 }
 
 // ---------- boot ----------

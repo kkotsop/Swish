@@ -8,16 +8,16 @@ See the product spec this was built from: [`SWISH_SPEC.md`](SWISH_SPEC.md) (§ n
 
 ## Run it on your iPhone
 
-Works best on iOS 17.2 or newer (Safari); older versions still work but lose some animation and colour details. Camera access needs **HTTPS**, so the easiest route is GitHub Pages:
+Works best on iOS 17.2 or newer (Safari); older versions still work but lose some animation and colour details. Installing to the home screen and offline use need **HTTPS**, so the easiest route is GitHub Pages:
 
 1. Merge to `main`. In the repo go to **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 2. The *Deploy to GitHub Pages* workflow runs the tests and publishes the site (about 1 minute). Your URL is `https://<user>.github.io/Swish/`.
 3. Open that URL in **Safari** on the iPhone → **Share → Add to Home Screen**. Launch Swish from the home screen icon.
-4. First launch: allow the camera. (If you tapped *Don't Allow*: Settings → Apps → Safari → Camera, or delete and re-add the home-screen app.)
+4. Choosing a video asks for access to your Photos (or the camera, if you pick Take Video) only when you tap the button.
 
 **Updating.** App code is fetched network-first (the offline copy is used only when the network fails), so a new deploy shows on the next launch. A new version only takes over once every app file has downloaded; if the code still fails to start, Swish shows a Reload button instead of an empty screen. The pose model and runtime are kept across updates in their own cache. If the old look sticks, close the app fully and open it again. The deploy workflow copies an explicit list of folders (`.github/workflows/pages.yml`); a new top-level folder must be added there or it will be missing from the live site.
 
-Run locally on a computer (camera works on `localhost`):
+Run locally on a computer:
 
 ```bash
 python3 -m http.server 8000      # then open http://localhost:8000
@@ -26,7 +26,7 @@ node tests/run.mjs               # unit tests (no dependencies)
 
 ## Using it
 
-One player profile (name and optional photo, saved once) → a swipeable carousel of moves (only **Shooting form** is live; Jab step, Layups and Crossover are greyed out as coming soon) → one **film** screen: an animated player shows where to put the phone (toggle **from the side** or **from the front**), three quick checks, then **Choose a video** (from Photos, then trim to ≤ 5 s; the clip's first frame and a loader show while it is read) or **Record** (the camera permission is only requested after you tap Open camera; 3/5/10 s countdown with beeps, 5 s clip) → analysis (live preview shows the tracked player in a green box with the skeleton) → a report you swipe **up/down** like Stories: the score and a card for **every** metric (picture cropped to the player, your number against its target zone, how to improve, why it matters), each fitting on one screen. Each score is saved to the profile; **Progress** (top bar, next to your profile circle) shows per-metric trends.
+One player profile (name and optional photo, saved once) → a swipeable carousel of moves (only **Shooting form** is live; Jab step, Layups and Crossover are greyed out as coming soon) → one **film** screen: one animated player loops between the **side** and **front** views (each labelled) to show where to put the phone, three quick checks, then **Choose a video**. On iPhone that button offers Take Video, Photo Library and Choose File, so recording is covered too; longer clips are trimmed to ≤ 5 s. The clip's first frame stays on screen with one progress bar that carries on from reading the video into the analysis (live preview shows the tracked player in a green box with the skeleton) → a report you swipe **up/down** like Stories: the score and a card for **every** metric (picture cropped to the player, your number against its target zone, how to improve, why it matters), each fitting on one screen. The last page summarises the session (overall, strongest, work on, change since last time). Each score is saved to the profile; **Progress** (top bar, next to your profile circle) shows per-metric trends and has a **Clear all entries** button (two taps, no undo). Tap your profile circle on the home screen to change your name or photo.
 
 Filming tips: shooter side-on **or** facing the phone, whole body in frame, good light, nobody else in the shot. Phone held upright (portrait) and about 3 m away is ideal, but landscape and filming from further back (even from the stands) are accepted: if the player is small in the frame, Swish zooms in on them before running the pose model. Side and front are detected automatically from the shoulders; the side view measures angles (release, set elbow, knee dip, balance, follow-through), the front view measures elbow alignment, sideways balance and off hand. Release height, tempo and off hand work from both. 60 fps or higher is best (iPhone: Settings → Camera → Record Video → 1080p HD at 60 fps, or use slow-mo 120/240 fps and upload), but Swish is forgiving: slower, darker, smaller, landscape or crowded clips are still analysed, with a note and lower confidence on the numbers.
 
@@ -34,7 +34,7 @@ Filming tips: shooter side-on **or** facing the phone, whole body in frame, good
 
 | Path | Purpose |
 |---|---|
-| `js/app.js` | Screens and navigation: profile, home carousel, film (guide + upload/record), trim, analysis, error, report, progress |
+| `js/app.js` | Screens and navigation: profile, home carousel, film (looping guide + video picker), trim, analysis, error, report, progress |
 | `js/ui.js` | DOM helpers, screen mounting (focus management), toast, top bar, avatar |
 | `js/guide.js` | Animated player in kit inside a phone screen, side or front view (SVG + SMIL) |
 | `styles.css` | All styling and design tokens; see [`DESIGN.md`](DESIGN.md) |
@@ -42,7 +42,6 @@ Filming tips: shooter side-on **or** facing the phone, whole body in frame, good
 | `js/shooting.js` | Shot isolation (load → set → release → landing), auto handedness, the 8 metrics, scoring |
 | `js/precheck.js` | Quality checks with specific messages; main-subject selection and the multiple-people rule |
 | `js/pose.js` | MediaPipe wrapper, frame stepping, fps measurement, key-frame grabs |
-| `js/capture.js` | Camera, countdown/beeps, fixed-length recording |
 | `js/report.js`, `js/skeleton.js` | Stories report (score meter, target-zone bars, player-centred crops, scroll cascade), skeleton overlay with shooting arm highlighted |
 | `js/motion.js` | Spring physics: press feedback on every control |
 | `js/icons.js`, `js/tokens.js` | One icon set and the matte basketball; design tokens read from `styles.css` for canvas and SVG |
@@ -81,7 +80,6 @@ Filming tips: shooter side-on **or** facing the phone, whole body in frame, good
 - Shot isolation scores the **highest** wrist peak in the clip; if you shoot several times in one clip, the best-extended one is used.
 - Swish only refuses a clip when it cannot find a person at all (or not even a rough shot). Dark, small, landscape, low-frame-rate or crowded clips are analysed anyway: a note appears on the score slide and every metric's tracking confidence drops one step. When the shot itself is doubtful, all metrics show low confidence. Balls, hoops and tiny figures are still ignored when picking the player.
 - Frame rate is measured by playing the clip off-screen (needs Safari 15.4+); if it can't be measured the check is skipped. Only clips under about 10 fps are refused. iPhone Safari may not decode a clip until it is played, so Swish nudges it with a silent play/pause and gives up with a clear message after 20 s. While a picked clip is read and analysed, its first frame stays on screen so the hand-over between screens does not flash. Variable-frame-rate slow-mo clips can report odd numbers; if a valid clip is rejected, re-export it at a fixed rate.
-- Recorded clips use the camera's reported frame rate. Most iPhones give 60 fps in Safari when asked; if yours reports 30 you'll get a clear message.
 - Analysis plays the clip and analyses frames as they appear, slowing the video down automatically so the model keeps up (seeking frame by frame is very slow on iPhone, so it is only a fallback). Frames are analysed at `analysisFps` (default 30; set 60 in `config/settings.json` for finer timing at roughly twice the processing time). Key-frame pictures and the replay are captured during that same pass, so the report never has to seek the video again. The model (about 19 MB) is preloaded once you are on the film screen or pick a video, not at app start, so it does not slow down launching; the very first analysis on mobile data waits for that download. The screen shows frame count and time remaining.
 - The report's key frames are grabbed at up to 960 px and cropped to the player. The looping replay reuses the frames the pose model saw (about 290×512 for a portrait clip), so it is softer than the key frames.
 - The look uses frosted glass over the court photo. Only the home cards blur live (`backdrop-filter`); every other screen sits on a pre-blurred copy of the photo, which is much cheaper on an iPhone. Surfaces go solid with **Increase Contrast** (Settings → Accessibility → Display & Text Size); browsers that support the reduced-transparency setting also get solid surfaces (iPhone Safari currently does not). With Reduce Motion, springs, the scroll cascade and pop-ins become simple fades and presses react without a bounce.

@@ -6,6 +6,8 @@ import { reducedMotion } from './tokens.js';
 // Player kit: a white jersey with teal trim, dark shorts, white sneakers, a pink headband and a pink shooting-arm sleeve.
 const SKIN = '#d9a07a', SKIN_DIM = '#b98562', JERSEY = '#f6f6f9', SHORTS = '#1b2233', TRIM = '#1f9bbd', BAND = '#f2a3bf', SHOE = '#f6f6f9', SOLE = '#8e94ad', HAIR = '#2a1a12', ARM = '#ff4fa3', BALL = '#d2691e', BALL_LINE = '#3a1c08';
 const DUR = '3.6s';
+// The side and front players take turns in one loop: each plays one shot, so the loop is two shots long.
+const LOOP = '7.2s';
 // Key times of the shot: stand, stand, dip, set, jump/release, follow-through, landing, stand.
 const KT = '0;.12;.35;.5;.6;.7;.85;1';
 
@@ -60,6 +62,7 @@ function phoneScreen(view) {
     ? `<circle r="6" fill="${BALL}" stroke="${BALL_LINE}" stroke-width="1"><animateMotion dur="${DUR}" repeatCount="indefinite" path="M64 56 Q76 24 88 70" keyPoints="0;0;0;0;0;1;1;1" keyTimes="${KT}" calcMode="linear"/>${fade([0, 0, 0, 0, 1, 1, 0, 0])}</circle>`
     : `<circle r="6" fill="${BALL}" stroke="${BALL_LINE}" stroke-width="1"><animateMotion dur="${DUR}" repeatCount="indefinite" path="M50 52 L44 22" keyPoints="0;0;0;0;0;1;1;1" keyTimes="${KT}" calcMode="linear"/><animate attributeName="r" values="6;6;6;6;6;15;15;6" keyTimes="${KT}" dur="${DUR}" repeatCount="indefinite"/>${fade([0, 0, 0, 0, 1, 1, 0, 0])}</circle>`;
   return `<svg class="hm hm-screen" viewBox="0 0 130 214" role="img" aria-label="What the phone sees: a player shooting, filmed ${side ? 'from the side' : 'from the front'}">
+    <animate attributeName="opacity" dur="${LOOP}" repeatCount="indefinite" keyTimes="0;.45;.5;.95;1" values="${side ? '1;1;0;0;1' : '0;0;1;1;0'}"/>
     <defs><linearGradient id="hmSky${view}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f4a60"/><stop offset="1" stop-color="#1d7c99"/></linearGradient></defs>
     <rect x="3" y="3" width="124" height="208" rx="18" fill="#0d0e13" stroke="#ffffff" stroke-opacity=".85" stroke-width="3"/>
     <rect x="9" y="9" width="112" height="196" rx="12" fill="url(#hmSky${view})"/>
@@ -68,15 +71,16 @@ function phoneScreen(view) {
     ${side ? '<g transform="translate(96 62)"><rect x="6" y="-14" width="3" height="40" rx="1.5" fill="#b8b8c8"/><rect x="-6" y="-14" width="14" height="22" rx="2" fill="#e9e9f2" stroke="#ff7b66" stroke-width="1.5"/><path d="M-18 8 H-2" stroke="#ff7b66" stroke-width="3" stroke-linecap="round"/></g>' : ''}
     <g transform="translate(${side ? 44 : 65} 128)">${side ? sideHuman() : frontHuman()}</g>
     ${flight}
+    <g><rect x="40" y="22" width="50" height="19" rx="9.5" fill="#0d0e13" fill-opacity=".6"/><text x="65" y="35.2" text-anchor="middle" font-size="11" font-weight="800" letter-spacing=".08em" fill="#ffffff" font-family="-apple-system, system-ui, sans-serif">${side ? 'SIDE' : 'FRONT'}</text></g>
     <path d="M22 36 v-10 h10 M108 36 v-10 h-10 M22 196 v10 h10 M108 196 v10 h-10" fill="none" stroke="#7bf0a8" stroke-width="2.5" stroke-linecap="round"/>
   </svg>`;
 }
 
-/** Returns a DOM element with the map + phone panels for a view ('side' | 'front'). */
-export function guideSvg(view = 'side') {
+/** One element holding both phone screens, crossfading: side first, then front, then side again. */
+export function guideSvg() {
   const wrap = document.createElement('div');
   wrap.className = 'guide-hero';
-  wrap.innerHTML = phoneScreen(view);
+  wrap.innerHTML = phoneScreen('side') + phoneScreen('front');
   if (reducedMotion()) wrap.querySelectorAll('svg').forEach((svg) => { try { svg.pauseAnimations(); svg.setCurrentTime(2.2); } catch { /* not supported */ } }); // park on the release frame
   return wrap;
 }
