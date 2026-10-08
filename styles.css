@@ -225,7 +225,7 @@ input[type=text]:focus-visible { border-color: var(--blue); outline: none; }
 .carousel { position: relative; display: flex; gap: var(--gap-3); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin: 0 -20px; padding: 8px 20px; scroll-padding: 0 20px; overscroll-behavior-x: contain; }
 .carousel::-webkit-scrollbar { display: none; }
 .carousel:focus-visible { outline-offset: -3px; }
-.move { flex: 0 0 76%; scroll-snap-align: center; min-height: min(46vh, 360px); display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; text-align: left; padding: var(--gap-5); border: 0; border-radius: var(--r-lg); color: var(--text); position: relative; overflow: hidden; background: color-mix(in srgb, var(--blue) 30%, var(--s1));  transform: scale(calc(1 - var(--d, 0) * .07)); }
+.move { will-change: transform; -webkit-backface-visibility: hidden; backface-visibility: hidden; flex: 0 0 76%; scroll-snap-align: center; min-height: min(46vh, 360px); display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; text-align: left; padding: var(--gap-5); border: 0; border-radius: var(--r-lg); color: var(--text); position: relative; overflow: hidden; background: color-mix(in srgb, var(--blue) 30%, var(--s1));  transform: scale(calc(1 - var(--d, 0) * .07)); }
 .move .art { position: absolute; top: var(--gap-5); left: var(--gap-5); width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.1); color: #fff; }
 .move .art.flip svg { transform: scaleX(-1); }
 .move b { font-size: 28px; line-height: 1.05; font-weight: 700; letter-spacing: -.025em; }
@@ -454,8 +454,10 @@ input[type=text]:focus-visible { border-color: var(--blue); outline: none; }
 /* move cards with a player photo: the photo fills the card, a dark fade at the bottom keeps the name readable */
 .home .move.photo { background: linear-gradient(180deg, rgba(8,9,14,.12) 0%, rgba(8,9,14,0) 30%, rgba(8,9,14,.5) 62%, rgba(8,9,14,.88) 100%), var(--photo) var(--focus, 50% 40%) / cover no-repeat, #14161f; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .home .move.photo::before { background: linear-gradient(112deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 30%); }
-.home .move.photo .art { background: rgba(8,9,14,.42); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+.home .move.photo .art { background: rgba(8,9,14,.5); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); } /* no blur behind it: a blur over a moving photo flickers while swiping */
 .home .move.photo small { color: rgba(255,255,255,.92); }
-.home .move.soon.photo { filter: grayscale(1) brightness(.78); } /* coming soon: the same photo, drained of colour */
 .home .move.soon.photo b { color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
 .home .move.soon.photo .art { color: rgba(255,255,255,.85); }
+
+/* app version, bottom of the profile page */
+.version { margin: 0; text-align: center; font-size: 12px; color: var(--text-2); opacity: .8; font-variant-numeric: tabular-nums; }

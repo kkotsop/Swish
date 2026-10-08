@@ -14,8 +14,8 @@ export const MOVES = {
       },
     },
   },
-  jab: { id: 'jab', photo: 'swish-icons/card-jab.jpg', focus: '50% 45%', name: 'Jab step', blurb: 'Coming soon', glyph: 'jab', available: false, orientation: 'landscape' },
-  layupLeft: { id: 'layupLeft', photo: 'swish-icons/card-layupLeft.jpg', focus: '50% 38%', name: 'Layup, left', blurb: 'Coming soon', glyph: 'layup', available: false },
-  layupRight: { id: 'layupRight', photo: 'swish-icons/card-layupRight.jpg', focus: '50% 35%', name: 'Layup, right', blurb: 'Coming soon', glyph: 'layup', flip: true, available: false },
-  crossover: { id: 'crossover', photo: 'swish-icons/card-crossover.jpg', focus: '56% 40%', name: 'Crossover', blurb: 'Coming soon', glyph: 'cross', available: false },
+  jab: { id: 'jab', photo: 'swish-icons/card-jab.jpg', photoSoon: 'swish-icons/card-jab-soon.jpg', focus: '50% 45%', name: 'Jab step', blurb: 'Coming soon', glyph: 'jab', available: false, orientation: 'landscape' },
+  layupLeft: { id: 'layupLeft', photo: 'swish-icons/card-layupLeft.jpg', photoSoon: 'swish-icons/card-layupLeft-soon.jpg', focus: '50% 38%', name: 'Layup, left', blurb: 'Coming soon', glyph: 'layup', available: false },
+  layupRight: { id: 'layupRight', photo: 'swish-icons/card-layupRight.jpg', photoSoon: 'swish-icons/card-layupRight-soon.jpg', focus: '50% 35%', name: 'Layup, right', blurb: 'Coming soon', glyph: 'layup', flip: true, available: false },
+  crossover: { id: 'crossover', photo: 'swish-icons/card-crossover.jpg', photoSoon: 'swish-icons/card-crossover-soon.jpg', focus: '56% 40%', name: 'Crossover', blurb: 'Coming soon', glyph: 'cross', available: false },
 };

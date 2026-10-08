@@ -22,6 +22,13 @@ function go(screen, ...args) {
   screen(...args);
 }
 
+/** "Swish v28": read from the service worker file itself, the one place the deployed version is written (also works offline from its cache). */
+function versionNote() {
+  const p = h('p', { class: 'version' }, 'Swish');
+  fetch('sw.js').then((r) => r.text()).then((t) => { const v = /swish-v(\d+)/.exec(t); if (v && p.isConnected) p.textContent = `Swish v${v[1]}`; }).catch(() => {});
+  return p;
+}
+
 // ---------- 1. Profile (one player, saved once; the same screen edits it later) ----------
 function profileScreen(editing = false) {
   const me = editing ? S.profile : null;
@@ -55,7 +62,7 @@ function profileScreen(editing = false) {
   if (editing) {
     mount(h('div', { class: 'screen' }, topbar('Your profile', () => go(moveScreen)),
       h('div', { class: 'edit-photo' }, picker, h('button', { class: 'btn alt small', onClick: () => file.click() }, photo ? 'Change photo' : 'Add a photo')),
-      h('label', { class: 'field' }, h('span', {}, 'Name'), name), remove, file, h('div', { class: 'spacer' }), save));
+      h('label', { class: 'field' }, h('span', {}, 'Name'), name), remove, file, h('div', { class: 'spacer' }), save, versionNote()));
     return;
   }
   mount(h('div', { class: 'screen' },
@@ -80,7 +87,7 @@ function moveScreen() {
     onClick: () => { if (m.available) { S.move = m; setTimeout(() => go(filmScreen), 140); } else toast(`${m.name} is coming soon`); } },
     h('span', { class: `art${m.flip ? ' flip' : ''}` }, icon(m.glyph || 'ball', 64)),
     h('b', {}, m.name), h('small', {}, m.blurb)));
-  moves.forEach((m, i) => { if (m.photo) { cards[i].style.setProperty('--photo', `url(${m.photo})`); cards[i].style.setProperty('--focus', m.focus || '50% 40%'); } }); // custom properties need setProperty
+  moves.forEach((m, i) => { if (m.photo) { cards[i].style.setProperty('--photo', `url(${m.available ? m.photo : (m.photoSoon || m.photo)})`); cards[i].style.setProperty('--focus', m.focus || '50% 40%'); } }); // custom properties need setProperty
   const dots = moves.map(() => h('i'));
   const start = h('button', { class: 'btn' }, 'Start');
   const sync = () => {
