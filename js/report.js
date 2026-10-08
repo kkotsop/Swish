@@ -147,11 +147,11 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
     meter);
   const first = h('section', { class: 'slide first', 'aria-label': 'Score' },
     h('div', { class: 'pills rise' }, h('span', { class: 'pill' }, VIEW_LABEL[result.view] || 'Side view'),
-      h('span', { class: 'pill' }, result.handAmbiguous ? 'Hand unclear' : `${result.hand === 'right' ? 'Right' : 'Left'} hand`),
+      h('span', { class: 'pill' }, `${result.hand === 'right' ? 'Right' : 'Left'} hand`), // always the arm drawn in pink
       h('span', { class: 'who' }, profile.name)),
     hero,
     chips,
-    ...[...(result.warnings || []), result.handAmbiguous ? 'Could not tell which hand you shoot with, so treat arm metrics with care.' : null].filter(Boolean)
+    ...[...(result.warnings || []), result.handAmbiguous ? `Couldn\u2019t see which hand you shoot with from this angle, so we measured your ${result.hand} arm (pink). Set your shooting hand in your profile to make it certain.` : null].filter(Boolean)
       .map((w) => h('div', { class: 'tiny-note rise' }, icon('alert', 14), w)));
   slides.push(first);
 

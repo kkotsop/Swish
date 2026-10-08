@@ -47,11 +47,20 @@ function profileScreen(editing = false) {
     paint();
     e.target.value = '';
   } });
+  // Shooting hand: side-on, the two arms overlap in the picture, so the hand set here decides which arm is measured.
+  let hand = me && (me.hand === 'left' || me.hand === 'right') ? me.hand : null;
+  const handBtn = (v, label) => h('button', { class: 'seg-btn', 'aria-pressed': String(hand === v), onClick: (e) => {
+    hand = hand === v ? null : v;
+    for (const b of e.currentTarget.parentNode.children) b.setAttribute('aria-pressed', String(b.dataset.v === hand));
+  }, 'data-v': v }, label);
+  const handPick = h('div', { class: 'field' }, h('span', {}, 'Shooting hand'),
+    h('div', { class: 'seg', role: 'group', 'aria-label': 'Shooting hand' }, handBtn('right', 'Right'), handBtn('left', 'Left')),
+    h('small', { class: 'hint' }, 'Swish measures this arm in every clip. Side-on it can\u2019t see which hand you use, so set it here. Tap it again to let Swish guess per clip.'));
   const remove = editing ? h('button', { class: 'btn ghost', onClick: () => { photo = null; paint(); } }, 'Remove photo') : null;
   const save = h('button', { class: 'btn', onClick: () => {
     const n = name.value.trim();
     if (!n) return toast('Enter your name first');
-    const p = me ? { ...me, name: n, photo } : { id: store.newId(), name: n, photo };
+    const p = me ? { ...me, name: n, photo, hand } : { id: store.newId(), name: n, photo, hand };
     if (!store.saveProfile(p)) return toast('Could not save (storage full?)');
     S.profile = p; store.setLastProfile(p.id);
     if (editing) toast('Saved');
@@ -62,7 +71,7 @@ function profileScreen(editing = false) {
   if (editing) {
     mount(h('div', { class: 'screen' }, topbar('Your profile', () => go(moveScreen)),
       h('div', { class: 'edit-photo' }, picker, h('button', { class: 'btn alt small', onClick: () => file.click() }, photo ? 'Change photo' : 'Add a photo')),
-      h('label', { class: 'field' }, h('span', {}, 'Name'), name), remove, file, h('div', { class: 'spacer' }), save, versionNote()));
+      h('label', { class: 'field' }, h('span', {}, 'Name'), name), handPick, remove, file, h('div', { class: 'spacer' }), save, versionNote()));
     return;
   }
   mount(h('div', { class: 'screen' },
@@ -70,7 +79,7 @@ function profileScreen(editing = false) {
     h('h1', { 'data-focus': '' }, 'Who\u2019s shooting?'),
     h('p', {}, 'Everything stays on this phone.'),
     h('div', { class: 'row' }, picker, name),
-    file, h('div', { class: 'spacer' }), save));
+    handPick, file, h('div', { class: 'spacer' }), save));
 }
 
 // ---------- 2. Move ----------
@@ -226,7 +235,7 @@ async function analyzeScreen(clip) {
     warn ? h('div', { class: 'tiny-note' }, icon('alert', 14), warn.message) : null));
   requestAnimationFrame(() => { bar.style.transition = ''; });
   try {
-    const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
+    const out = await runAnalysis({ clip, move: S.move, config: { ...S.config, hand: S.profile.hand || null }, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
       stage.replaceChildren(preview); stage.classList.add('has-video'); preview.style.display = '';
       preview.width = src.width; preview.height = src.height;
       const ctx = preview.getContext('2d'); ctx.drawImage(src, 0, 0);

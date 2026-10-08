@@ -20,7 +20,8 @@ const test = (name, fn) => queue.push([name, fn]);
 test('right-handed shot: phases, hand, direct metrics', () => {
   const { s, r } = run({});
   assert.ok(r.ok, JSON.stringify(r));
-  assert.equal(r.hand, 'right'); assert.equal(r.facing, 1); assert.ok(!r.handAmbiguous);
+  assert.equal(r.hand, 'right'); assert.equal(r.facing, 1);
+  assert.equal(r.handSource, 'guess', 'side-on the two arms overlap, so the hand is a labelled guess unless the profile sets it');
   near(r.phases.release, s.releaseFrame, 4, 'release frame');
   near(r.phases.set, s.setFrame, 8, 'set frame');
   near(r.phases.bottom, s.bottomFrame, 4, 'bottom frame');
@@ -105,7 +106,7 @@ test('front view is detected and measures only what it can (elbow alignment, off
   assert.ok(good.ok, JSON.stringify(good)); assert.equal(good.view, 'front');
   assert.deepEqual(Object.keys(good.metrics).sort(), [...FRONT_METRICS].sort());
   assert.ok(good.metrics.elbowAlignment.value < 12, `alignment ${good.metrics.elbowAlignment.value}`);
-  assert.equal(good.metrics.guideHand.status, 'good');
+  assert.notEqual(good.metrics.guideHand.status, 'needs-work');
   const flared = analyzeShooting(makeFrontShot({ setTilt: 40 }).frames, { aspect: ASPECT, fps: 60, config });
   assert.ok(flared.metrics.elbowAlignment.value > good.metrics.elbowAlignment.value + 15, `${flared.metrics.elbowAlignment.value}`);
   const lefty = analyzeShooting(makeFrontShot({ rightHanded: false }).frames, { aspect: ASPECT, fps: 60, config });
@@ -187,6 +188,20 @@ test('scoreValue: good / borderline / needs-work', () => {
   assert.equal(scoreValue(40, rg).status, 'borderline');
   assert.equal(scoreValue(20, rg).status, 'needs-work');
   assert.equal(scoreValue(50, rg).score, 100);
+});
+
+test('scoring is strict: 100 only in the ideal zone, 85 at the edge of good, 50 at the edge of the tolerance', () => {
+  const rg = { good: [45, 58], ideal: [49, 55], tolerance: 10 };
+  assert.equal(scoreValue(52, rg).score, 100);
+  assert.equal(scoreValue(45, rg).score, 85); assert.equal(scoreValue(58, rg).score, 85);
+  assert.equal(scoreValue(47, rg).status, 'good'); assert.ok(scoreValue(47, rg).score < 100 && scoreValue(47, rg).score > 85);
+  assert.equal(scoreValue(35, rg).score, 50); assert.equal(scoreValue(25, rg).score, 0);
+  const tempo = config.moves.shooting.ranges.tempo; // less is better: quick shots get full marks, 1.2 s is the edge
+  assert.equal(scoreValue(0.5, tempo).score, 100); assert.equal(scoreValue(1.2, tempo).score, 85); assert.equal(scoreValue(1.3, tempo).status, 'borderline');
+  assert.deepEqual(config.moves.shooting.ranges.elbowAlignment.good, [0, 12]);
+  // a shot that is merely inside every green zone, at the edges, cannot reach 90
+  const edge = { a: { status: 'good', score: 85 }, b: { status: 'good', score: 85 }, c: { status: 'good', score: 85 } };
+  assert.equal(headlineScore(edge, {}), 85);
 });
 
 const person = (cx, h, v = 0.9) => Array.from({ length: 33 }, (_, i) => ({ x: cx + ((i % 5) - 2) * 0.01, y: 0.1 + (i / 32) * h, z: 0, v }));
@@ -387,6 +402,25 @@ test('level screen can say why you are stuck: this week is capped, extra videos 
   assert.equal(next.capped, false); assert.equal(next.thisWeekCounted, 0); assert.equal(next.ignored, 6);
   const two = journey(inWeeks([0, 2]), mondayOf(0));
   assert.equal(two.capped, false); assert.equal(two.ignored, 0);
+});
+
+test('shooting hand: detected from the front, taken from the profile side-on, and the label always matches the arm used', () => {
+  const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
+  assert.equal(front.hand, 'right'); assert.equal(front.handSource, 'detected'); assert.equal(front.handAmbiguous, false);
+  const lefty = analyzeShooting(makeFrontShot({ rightHanded: false }).frames, { aspect: ASPECT, fps: 60, config });
+  assert.equal(lefty.hand, 'left'); assert.equal(lefty.handSource, 'detected');
+  const side = analyzeShooting(makeShot({}).frames, { aspect: ASPECT, fps: 60, config: { ...config, hand: 'left' } });
+  assert.equal(side.hand, 'left'); assert.equal(side.handSource, 'profile'); assert.equal(side.handAmbiguous, false);
+  assert.equal(side.guideHand, 'right');
+  const sideAuto = analyzeShooting(makeShot({}).frames, { aspect: ASPECT, fps: 60, config: { ...config, hand: null } });
+  assert.equal(sideAuto.handAmbiguous, true); assert.ok(['left', 'right'].includes(sideAuto.hand));
+});
+
+test('release height is the highest point the hand reaches, not just the release frame', () => {
+  const { r } = run({});
+  const m = r.metrics.releaseHeight;
+  assert.ok(m.frame >= r.phases.release - 6 && m.frame <= r.phases.release + 18, `frame ${m.frame} vs release ${r.phases.release}`);
+  assert.ok(Number.isFinite(m.value) && m.value > 1, `height ${m.value}`);
 });
 
 let passed = 0;

@@ -83,5 +83,5 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
   }
   const advice = await personalisedAdvice(move.id, analysis.metrics, ranges, config);
   const replay = { fps: fps / 2, aspect: pass.aspect, frames: [...replayByFrame.keys()].sort((x, y) => x - y).map((i) => ({ src: replayByFrame.get(i), lm: subject.frames[i]?.lm || null })) };
-  return { ok: true, result: { move: move.id, ts: Date.now(), hand: analysis.hand, handAmbiguous: analysis.handAmbiguous, score, metrics: analysis.metrics, metricIds: analysis.metricIds, view: analysis.view, replay, stills, advice, ranges, warnings } };
+  return { ok: true, result: { move: move.id, ts: Date.now(), hand: analysis.hand, handAmbiguous: analysis.handAmbiguous, handSource: analysis.handSource, score, metrics: analysis.metrics, metricIds: analysis.metricIds, view: analysis.view, replay, stills, advice, ranges, warnings } };
 }

@@ -47,14 +47,30 @@ function confidenceFor(vis, names, from, to) {
   return confLabel(mean(vals));
 }
 
-/** Score a value against a { good:[min,max], tolerance } range. `tolerance` may be [below, above] when one side should hurt more. */
+/**
+ * Score a value against a { good:[min,max], ideal?:[min,max], tolerance } range. `tolerance` may be [below, above] when one
+ * side should hurt more. Full marks only inside the ideal zone; the edge of the good zone is 85, the edge of the tolerance 50
+ * and twice the tolerance 0, so a 90+ overall needs most metrics close to ideal, not just inside the green.
+ * Without an explicit `ideal`, it is the middle 40% of the good zone (or its lower 40% when the zone starts at 0: less is better).
+ */
+export const GOOD_EDGE = 85;
+export function idealZone(range) {
+  const [lo, hi] = range.good, w = hi - lo;
+  return range.ideal || (lo <= 0 ? [lo, lo + 0.4 * w] : [lo + 0.3 * w, hi - 0.3 * w]);
+}
 export function scoreValue(value, range) {
   if (!Number.isFinite(value)) return { status: 'unknown', score: 0 };
   const [lo, hi] = range.good;
   const d = value < lo ? lo - value : value > hi ? value - hi : 0;
   const t = range.tolerance;
   const tol = (Array.isArray(t) ? (value < lo ? t[0] : t[1]) : t) || (hi - lo) * 0.5 || 1;
-  const score = Math.round(clamp(100 - (50 * d) / tol, 0, 100));
+  let score;
+  if (d === 0) {
+    const [a, b] = idealZone(range);
+    const off = value < a ? (a - value) / (a - lo || 1) : value > b ? (value - b) / (hi - b || 1) : 0;
+    score = 100 - (100 - GOOD_EDGE) * clamp(off, 0, 1);
+  } else score = d <= tol ? GOOD_EDGE - ((GOOD_EDGE - 50) * d) / tol : 50 - (50 * (d - tol)) / tol;
+  score = Math.round(clamp(score, 0, 100));
   const status = d === 0 ? 'good' : d <= tol ? 'borderline' : 'needs-work';
   return { status, score, direction: value < lo ? 'low' : value > hi ? 'high' : 'ok' };
 }
@@ -68,26 +84,46 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const smoothN = Math.max(3, 2 * Math.round(rate(1 / 12) / 2) + 1);
   const { series: S, vis } = buildSeries(frames, aspect, smoothN);
 
-  // ---- Camera view: front-on shows wide shoulders, side-on shows them stacked.
+  // ---- Where the shot is: the highest either wrist gets above its shoulder. View and hand are judged around it, not while
+  //      the player walks in or turns away.
+  const rise = (side) => S[side + 'Shoulder'].map((s, i) => s.y - S[side + 'Wrist'][i].y); // >0 = wrist above shoulder
+  const riseL = rise('l'), riseR = rise('r');
+  const peak0 = argmax(riseL.map((v, i) => Math.max(v, riseR[i])));
   const midSh = S.lShoulder.map((p, i) => ({ x: (p.x + S.rShoulder[i].x) / 2, y: (p.y + S.rShoulder[i].y) / 2 }));
   const midHip = S.lHip.map((p, i) => ({ x: (p.x + S.rHip[i].x) / 2, y: (p.y + S.rHip[i].y) / 2 }));
   const torso = median(midSh.map((p, i) => dist(p, midHip[i]))) || 0.1;
   const shoulderW = median(S.lShoulder.map((p, i) => Math.abs(p.x - S.rShoulder[i].x)));
-  const widthRatio = shoulderW / torso;
+  const around = (from, to) => Array.from({ length: Math.max(0, to - from + 1) }, (_, k) => from + k);
+  const shotWin = around(Math.max(0, peak0 - rate(1.0)), peak0);
+
+  // ---- Camera view: front-on shows wide shoulders, side-on shows them stacked (measured during the shot only).
+  const widthRatio = median(shotWin.map((i) => Math.abs(S.lShoulder[i].x - S.rShoulder[i].x) / (dist(midSh[i], midHip[i]) || torso)));
   const view = config.view === 'front' || config.view === 'side' ? config.view : widthRatio > 0.55 ? 'front' : 'side';
 
-  // ---- Handedness: the wrist that gets highest above its shoulder is the shooting hand.
-  const rise = (side) => S[side + 'Shoulder'].map((s, i) => s.y - S[side + 'Wrist'][i].y); // >0 = wrist above shoulder
-  const riseL = rise('l'), riseR = rise('r');
-  const peakL = Math.max(...riseL), peakR = Math.max(...riseR);
-  const handGap = Math.abs(peakL - peakR) / torso;
-  const hand = peakR >= peakL ? 'right' : 'left';
-  const handAmbiguous = handGap < 0.15;
+  // ---- Shooting hand. Clues: the shooting arm straightens fully at the top of the shot (the guide hand comes off the ball
+  //      still bent) and its wrist gets highest. Side-on, the two arms sit on top of each other in the picture and cannot be
+  //      told apart, so the hand set in the player's profile is used (config.hand); without one it is a labelled guess.
+  const elbowOf = (sd) => S[sd + 'Shoulder'].map((p, i) => angleAt(p, S[sd + 'Elbow'][i], S[sd + 'Wrist'][i]));
+  const angL = elbowOf('l'), angR = elbowOf('r');
+  const topWin = around(Math.max(0, peak0 - rate(0.3)), Math.min(n - 1, peak0 + rate(0.15)));
+  const maxOf = (a) => Math.max(...topWin.map((i) => a[i]).filter(Number.isFinite));
+  const extGap = maxOf(angR) - maxOf(angL); // degrees, > 0 = right arm straighter
+  const riseGap = (maxOf(riseR) - maxOf(riseL)) / torso; // > 0 = right wrist higher
+  const armsApart = median(topWin.map((i) => (dist(S.lWrist[i], S.rWrist[i]) + dist(S.lElbow[i], S.rElbow[i])) / 2)) / torso;
+  const vote = (Number.isFinite(extGap) ? clamp(extGap / 15, -1.5, 1.5) : 0) + (Number.isFinite(riseGap) ? clamp(riseGap / 0.15, -1.5, 1.5) : 0);
+  const reachedTop = Math.max(maxOf(angL), maxOf(angR)) >= 150; // a clip cut before the release must not decide the hand
+  const handSeen = reachedTop && armsApart >= 0.25 && Math.abs(vote) >= 1; // two separate arms, a real release, clues clearly one way
+  const preset = config.hand === 'left' || config.hand === 'right' ? config.hand : null;
+  const hand = preset || (vote >= 0 ? 'right' : 'left');
+  const handSource = preset ? 'profile' : handSeen ? 'detected' : 'guess';
+  const handAmbiguous = handSource === 'guess';
+  const handGap = vote;
   const side = hand === 'right' ? 'r' : 'l';
   const guide = hand === 'right' ? 'l' : 'r';
   const sh = S[side + 'Shoulder'], el = S[side + 'Elbow'], wr = S[side + 'Wrist'], ix = S[side + 'Index'];
   const gw = S[guide + 'Wrist'];
   const rises = hand === 'right' ? riseR : riseL;
+  const peakL = Math.max(...riseL), peakR = Math.max(...riseR);
   if (Math.max(peakL, peakR) < -0.15 * torso) return { ok: false, error: 'no-shot' }; // the hands never even reach the shoulders
   let weakShot = Math.max(peakL, peakR) < 0.1 * torso; // forgiving: a doubtful shot is still analysed, just with low confidence
 
@@ -236,8 +272,10 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   add('legArmTiming', Math.abs(timing), 's', armDone >= 0 ? armDone : release, ['lHip', 'rHip', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle', ...armNames], Math.min(legsDone, armDone), Math.max(legsDone, armDone),
     { signed: timing, note: timing >= 0 ? 'arm finishes after the legs' : 'arm finishes before the legs' });
 
-  // Release height: where the ball leaves the hand (fingertip at the release frame) relative to standing height.
-  add('releaseHeight', (ankBase - ix[release].y) / (standingH || 1), 'x height', release, [armNames[2], indexName], release - 2, release + 2);
+  // Release height: the highest point the shooting hand reaches around the release (fingertip), relative to standing height.
+  const hiAt = argmin(ix.map((p) => p.y), Math.max(0, release - rate(0.1)), Math.min(n - 1, release + rate(0.3)));
+  const top = hiAt >= 0 ? hiAt : release;
+  add('releaseHeight', (ankBase - ix[top].y) / (standingH || 1), 'x height', top, [armNames[2], indexName], top - 2, top + 2);
 
   // Tempo: load start -> release.
   add('tempo', (release - loadStart) / fps, 's', release, ['lHip', 'rHip'], loadStart, release);
@@ -250,7 +288,7 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
 
   if (weakShot) for (const id of Object.keys(m)) m[id].confidence = 'low';
   return {
-    ok: true, hand, handAmbiguous, weakShot, facing, view, widthRatio,
+    ok: true, hand, handAmbiguous, handSource, handGap, weakShot, facing, view, widthRatio,
     phases: { loadStart, bottom, takeoff, set, release, apex, landing },
     metrics: m,
     metricIds: displayMetrics(view),
