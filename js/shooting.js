@@ -7,7 +7,7 @@
 // Metrics that cannot be measured reliably from a view are simply not reported for it.
 import { LM, angleAt, argmax, argmin, clamp, deg, dist, fillGaps, mean, median, smoothSeries } from './mathutil.js';
 
-export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'elbowAngle', 'kneeDip', 'releaseHeight', 'followThrough', 'tempo', 'legArmTiming', 'guideHand'];
+export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'elbowAngle', 'kneeDip', 'releaseHeight', 'followThrough', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
 export const FRONT_METRICS = ['elbowAlignment', 'sideDrift', 'releaseHeight', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
 export const SHOOTING_METRICS = [...new Set([...SIDE_METRICS, ...FRONT_METRICS])];
 export const metricsForView = (view) => (view === 'front' ? FRONT_METRICS : SIDE_METRICS);
@@ -18,13 +18,13 @@ function buildSeries(frames, aspect, smoothN) {
   const series = {};
   const vis = {};
   for (const [name, idx] of Object.entries(LM)) {
-    const xs = new Array(n).fill(NaN), ys = new Array(n).fill(NaN), vs = new Array(n).fill(0);
+    const xs = new Array(n).fill(NaN), ys = new Array(n).fill(NaN), zs = new Array(n).fill(NaN), vs = new Array(n).fill(0);
     frames.forEach((f, i) => {
       const p = f.lm && f.lm[idx];
-      if (p) { xs[i] = p.x * aspect; ys[i] = p.y; vs[i] = p.v ?? 1; }
+      if (p) { xs[i] = p.x * aspect; ys[i] = p.y; zs[i] = (p.z ?? 0) * aspect; vs[i] = p.v ?? 1; } // z (depth) is on the same scale as x
     });
-    const sx = smoothSeries(fillGaps(xs), smoothN), sy = smoothSeries(fillGaps(ys), smoothN);
-    series[name] = sx.map((x, i) => ({ x, y: sy[i] }));
+    const sx = smoothSeries(fillGaps(xs), smoothN), sy = smoothSeries(fillGaps(ys), smoothN), sz = smoothSeries(fillGaps(zs), smoothN);
+    series[name] = sx.map((x, i) => ({ x, y: sy[i], z: sz[i] }));
     vis[name] = vs;
   }
   return { series, vis };
@@ -211,11 +211,18 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
     add('sideDrift', sideways, 'shoulders', landing, ['lHip', 'rHip', 'lAnkle', 'rAnkle'], takeoff, landing, { jumped });
   }
 
-  // Stance (front view): how far apart the feet are before the dip, in shoulder widths. From the side the sideways gap
-  // between the feet cannot be seen, so there is no stance metric there.
-  if (view === 'front') {
+  // Stance: how far apart the feet are before the dip. Front view: the sideways gap in shoulder widths. Side view: the gap
+  // cannot be seen directly (it points at the camera), so it is estimated from the feet's depth as well as their spacing,
+  // in shin lengths, and always reported with low confidence.
+  {
     const idx = Array.from({ length: Math.max(0, baseTo - baseFrom + 1) }, (_, k) => baseFrom + k);
-    add('stance', median(idx.map((i) => Math.abs(S.lAnkle[i].x - S.rAnkle[i].x))) / (shoulderW || 1), 'shoulders', baseTo, ['lAnkle', 'rAnkle', 'lHip', 'rHip'], baseFrom, baseTo);
+    const names = ['lAnkle', 'rAnkle', 'lHip', 'rHip'];
+    if (view === 'front') {
+      add('stance', median(idx.map((i) => Math.abs(S.lAnkle[i].x - S.rAnkle[i].x))) / (shoulderW || 1), 'shoulders', baseTo, names, baseFrom, baseTo);
+    } else {
+      add('stance', median(idx.map((i) => Math.hypot(S.lAnkle[i].x - S.rAnkle[i].x, S.lAnkle[i].z - S.rAnkle[i].z))) / (shin || 1), 'shins', baseTo, names, baseFrom, baseTo);
+      m.stance.confidence = 'low'; // depth from a single camera is rough
+    }
   }
 
   // Leg-to-arm timing: the gap between the legs finishing their push and the arm finishing its extension.

@@ -27,7 +27,7 @@ export const rubberband = (overshoot, dimension, constant = 0.55) => (overshoot 
  * Press physics for every tappable control: it sinks under the finger the instant it lands (spring, no overshoot) and
  * springs back with a little bounce on release. Uses the individual `scale` property so it never fights `transform`.
  */
-export function initPress(selector = '.btn, .move, .chip, .back, .avatar-btn, .avatar.big, .seg button, .drop-ico') {
+export function initPress(selector = '.btn, .move, .chip, .back, .level-pill, .avatar-btn, .avatar.big, .seg button, .drop-ico') {
   const states = new WeakMap();
   const reduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let active = null;

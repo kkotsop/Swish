@@ -3,7 +3,7 @@ import { h, buzz } from './ui.js';
 import { drawSkeleton, focusJoint } from './skeleton.js';
 import { icon, STATUS_ICON } from './icons.js';
 import { reducedMotion } from './tokens.js';
-import { scoreBand } from './coaching.js';
+import { scoreBand, CATEGORIES } from './coaching.js';
 import { playerBox, fitAspect } from './crop.js';
 
 const STATUS_LABEL = { good: 'Good', borderline: 'Borderline', 'needs-work': 'Needs improvement', unknown: 'Not measured' };
@@ -114,7 +114,7 @@ function summaryBlock({ result, move, previous }) {
 }
 
 /** Build the whole report. actions: { onRetry, onProgress, onHome } */
-export function renderReport({ result, move, profile, actions, saved = true, previous = null }) {
+export function renderReport({ result, move, profile, actions, saved = true, previous = null, journey = null, events = {} }) {
   const root = h('div', { class: 'stories' });
   const slides = [], marks = [];
   const ids = result.metricIds || move.metrics;
@@ -123,13 +123,17 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
   const band = scoreBand(result.score);
 
   // Slide 1: the score and every metric as a /100 chip.
-  const chips = ids.filter((id) => result.metrics[id]).map((id) => {
+  const chipFor = (id) => {
     const m = result.metrics[id];
     return h('button', { class: `chip ${m.status}`, onClick: () => jump(id), 'aria-label': `${move.copy[id].name}, ${m.status === 'unknown' ? 'not measured' : `${m.score} out of 100`}, ${STATUS_LABEL[m.status]}, ${CONF_WORD[m.confidence]} tracking confidence. Jumps to its card.` },
       confBars(m.confidence),
       h('span', { class: 'dot' }, icon(STATUS_ICON[m.status] || 'dash', 18)),
       h('b', {}, move.copy[id].short), h('span', { class: 'val' }, m.status === 'unknown' ? '—' : String(m.score), h('em', {}, '/100')));
-  });
+  };
+  const present = ids.filter((id) => result.metrics[id]);
+  const groups = CATEGORIES.map((c) => ({ ...c, ids: present.filter((id) => move.copy[id].cat === c.id) })).filter((g) => g.ids.length);
+  const chips = h('div', { class: 'chipgroups rise' }, groups.map((g) => h('section', { class: 'chipgroup', 'aria-label': g.name },
+    h('h3', { class: 'cat' }, g.name), h('div', { class: 'chips' }, g.ids.map(chipFor)))));
   // The score owns the slide: one number, its status label, and a band meter showing where it falls and why it carries that label.
   const BANDS = [{ k: 'needs-work', w: 50 }, { k: 'borderline', w: 20 }, { k: 'good', w: 30 }];
   const track = h('div', { class: 'track' }, BANDS.map((b) => h('i', { class: `seg ${b.k}${b.k === band ? ' on' : ''}`, style: { flexBasis: `${b.w}%` } })));
@@ -146,7 +150,7 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
       h('span', { class: 'pill' }, result.handAmbiguous ? 'Hand unclear' : `${result.hand === 'right' ? 'Right' : 'Left'} hand`),
       h('span', { class: 'who' }, profile.name)),
     hero,
-    h('div', { class: 'chips rise' }, chips),
+    chips,
     ...[...(result.warnings || []), result.handAmbiguous ? 'Could not tell which hand you shoot with, so treat arm metrics with care.' : null].filter(Boolean)
       .map((w) => h('div', { class: 'tiny-note rise' }, icon('alert', 14), w)));
   slides.push(first);
@@ -161,10 +165,12 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
   }
 
   // One slide per metric, worst first, so every metric has its own card (including the ones in the green).
-  const ordered = ids.filter((id) => result.metrics[id]).sort((a, b) => result.metrics[a].score - result.metrics[b].score);
+  const catIndex = (id) => CATEGORIES.findIndex((c) => c.id === move.copy[id].cat);
+  const ordered = ids.filter((id) => result.metrics[id]).sort((a, b) => catIndex(a) - catIndex(b) || result.metrics[a].score - result.metrics[b].score);
   for (const id of ordered) {
     const m = result.metrics[id], c = move.copy[id], r = result.ranges[id];
     slides.push(slideOf[id] = h('section', { class: 'slide metric', 'aria-label': c.name },
+      h('div', { class: 'mcat rise' }, CATEGORIES[catIndex(id)].name),
       h('div', { class: 'mhead rise' }, h('div', { class: 'cap' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`), badge(m.status)),
       result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id }) : null,
       factsBlock(m, r), zoneBar(m, r, marks),
@@ -175,8 +181,10 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
   // Final slide: wrap-up actions.
   slides.push(h('section', { class: 'slide', 'aria-label': 'Saved' },
     h('div', { class: 'final-main' },
-      h('div', { class: 'cap rise' }, saved ? `Saved. Score ${result.score}.` : `Score ${result.score}. Not saved.`),
+      h('div', { class: 'mhead rise' }, h('div', { class: 'cap' }, saved ? `Saved. Score ${result.score}.` : `Score ${result.score}. Not saved.`),
+        journey && journey.rank.name ? h('span', { class: 'level-tag' }, icon('ball', 16), journey.rank.name) : null),
       summaryBlock({ result, move, previous }),
+      events.restEarned ? h('div', { class: 'jline rise' }, h('span', { class: 'tag' }, icon('moon', 14), 'Rest week earned')) : null,
       h('button', { class: 'btn rise', onClick: actions.onRetry }, icon('camera', 22), 'Film another'),
       h('button', { class: 'btn alt rise', onClick: actions.onProgress }, icon('chart', 22), 'See progress'),
       h('button', { class: 'btn ghost rise', onClick: actions.onHome }, 'Home')),

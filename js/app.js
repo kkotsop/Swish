@@ -9,9 +9,11 @@ import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
 import { lineChart, trend } from './progress.js';
 import { drawSkeleton } from './skeleton.js';
-import { icon, throwSvg } from './icons.js';
+import { icon, throwSvg, ballFireIcon } from './icons.js';
 import { initPress } from './motion.js';
 import { token } from './tokens.js';
+import { journey, milestones, LADDER, PER_WEEK } from './journey.js';
+import { celebrate } from './celebrate.js';
 
 const S = { config: null, profile: null, move: null, cleanup: null, lastFile: null };
 
@@ -74,10 +76,11 @@ function topRow() {
 function moveScreen() {
   const moves = Object.values(MOVES);
   let current = 0;
-  const cards = moves.map((m, i) => h('button', { class: `move${m.available ? '' : ' soon'}`, 'aria-label': `${m.name}${m.available ? '' : ', coming soon'}`, 'aria-disabled': m.available ? null : 'true',
+  const cards = moves.map((m, i) => h('button', { class: `move${m.available ? '' : ' soon'}${m.photo ? ' photo' : ''}`, 'aria-label': `${m.name}${m.available ? '' : ', coming soon'}`, 'aria-disabled': m.available ? null : 'true',
     onClick: () => { if (m.available) { S.move = m; setTimeout(() => go(filmScreen), 140); } else toast(`${m.name} is coming soon`); } },
     h('span', { class: `art${m.flip ? ' flip' : ''}` }, icon(m.glyph || 'ball', 64)),
     h('b', {}, m.name), h('small', {}, m.blurb)));
+  moves.forEach((m, i) => { if (m.photo) { cards[i].style.setProperty('--photo', `url(${m.photo})`); cards[i].style.setProperty('--focus', m.focus || '50% 40%'); } }); // custom properties need setProperty
   const dots = moves.map(() => h('i'));
   const start = h('button', { class: 'btn' }, 'Start');
   const sync = () => {
@@ -102,7 +105,7 @@ function moveScreen() {
   track.addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(depth); } }, { passive: true });
   mount(h('div', { class: 'screen home' },
     topRow(),
-    h('h1', { 'data-focus': '' }, `Hey ${S.profile.name}.`),
+    journeyHeader(myJourney()),
     h('div', { class: 'carousel-wrap' }, track, h('div', { class: 'dots', 'aria-hidden': 'true' }, dots)),
     start));
   sync();
@@ -247,6 +250,7 @@ function errorScreen(message) {
 
 // ---------- 7 + 8. Report (+ save) ----------
 function reportScreen(result) {
+  const jBefore = myJourney();
   const before = store.sessionsFor(S.profile.id, result.move);
   const previous = before.length ? before[before.length - 1].score : null;
   const saved = store.addSession({
@@ -254,8 +258,61 @@ function reportScreen(result) {
     metrics: Object.fromEntries(Object.entries(result.metrics).map(([id, m]) => [id, { value: m.value, score: m.score, status: m.status }])),
   });
   if (!saved) toast('Could not save (storage full?)');
-  mount(renderReport({ result, move: S.move, profile: S.profile, saved, previous, actions: {
+  const jAfter = saved ? myJourney() : jBefore;
+  const events = saved ? milestones(jBefore, jAfter) : {}; // comparing before/after means each moment fires exactly once
+  const root = mount(renderReport({ result, move: S.move, profile: S.profile, saved, previous, journey: jAfter, events, actions: {
     onRetry: () => go(filmScreen), onProgress: () => go(progressScreen, S.move), onHome: () => go(moveScreen) } }));
+  if (events.big) celebrate(root, celebrationText(events, jAfter));
+}
+
+const an = (w) => (/^[AEIOU]/.test(w) ? 'an' : 'a');
+/** One celebration, even when several moments land together (the first video is also the first level). */
+function celebrationText(ev, j) {
+  const r = j.rank;
+  const next = r.next ? `${r.toNext} more video${r.toNext === 1 ? '' : 's'} to ${r.next}.` : 'Top of the ladder.';
+  if (ev.first) return { title: 'First video!', badge: r.name, line: `You're ${an(r.name)} ${r.name}. ${next}` };
+  if (ev.rankUp) return { title: `You're ${an(ev.rankUp.to)} ${ev.rankUp.to}!`, badge: ev.rankUp.to, line: `Up from ${ev.rankUp.from}. ${next}` };
+  return { title: '5 videos!', badge: r.name, line: `Five sessions in. ${next}` };
+}
+
+// ---------- Journey: level, weekly streak, rest weeks ----------
+const myJourney = () => journey(store.activityForProfile(S.profile.id));
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+/** Home header: the greeting with the level and streak beside it as one unit. Tap it for the timeline and the weekly strip. */
+function journeyHeader(j) {
+  const r = j.rank;
+  const pill = h('button', { class: 'level-pill', onClick: () => go(levelScreen),
+    'aria-label': r.name ? `Level ${r.name}${j.streak ? `, streak ${j.streak}` : ''}. Shows the level timeline.` : 'No level yet. Shows the level timeline.' },
+  r.name ? h('b', {}, r.name) : h('b', {}, 'Noobie next'),
+  r.name && j.streak ? h('span', { class: 'streak' }, ballFireIcon(20), String(j.streak)) : null);
+  return h('div', { class: 'journey' },
+    h('div', { class: 'greet' }, h('h1', { 'data-focus': '' }, `Hey ${S.profile.name}.`), pill));
+}
+
+/** Videos per week for the last 8 weeks; rest weeks held show as spares at the end. */
+function weekRow(j) {
+  const bar = (w) => h('div', { class: `wk ${w.state}${w.current ? ' now' : ''}` },
+    h('span', { class: 'bar' }, w.state === 'rest' ? icon('moon', 12) : h('i', { style: { height: w.count ? `${30 + 70 * (Math.min(PER_WEEK, w.count) / PER_WEEK)}%` : '0' } })));
+  const said = j.weeks.map((w) => (w.state === 'rest' ? 'rest' : String(w.count))).join(', ');
+  return h('div', { class: 'weekrow' },
+    h('div', { class: 'weeks', role: 'img', 'aria-label': `Videos per week, last ${j.weeks.length} weeks, oldest first: ${said}. ${plural(j.restHeld, 'rest week')} held.` }, j.weeks.map(bar)),
+    j.restHeld ? h('div', { class: 'spares', 'aria-hidden': 'true' }, Array.from({ length: j.restHeld }, () => icon('moon', 14))) : null);
+}
+
+/** The level timeline (where you are, what is behind you, what is ahead) with your videos per week above it. */
+function levelScreen() {
+  const j = myJourney(), r = j.rank;
+  const head = r.name
+    ? [h('div', { class: 'big' }, r.name),
+      r.next ? h('span', { class: 'lbl' }, `${plural(r.toNext, 'video')} to ${r.next}`) : h('span', { class: 'lbl' }, 'Top of the ladder'),
+      r.next ? h('div', { class: 'progress-track', role: 'progressbar', 'aria-label': `Progress to ${r.next}`, 'aria-valuenow': String(Math.round(r.frac * 100)) }, h('div', { class: 'progress-bar', style: { transform: `scaleX(${r.frac})` } })) : null,
+      j.total ? h('div', { class: 'perweek' }, h('span', { class: 'lbl' }, 'Videos per week'), weekRow(j)) : null]
+    : [h('div', { class: 'big' }, 'Not yet'), h('span', { class: 'lbl' }, 'Film a shot to become a Noobie')];
+  const timeline = h('ol', { class: 'timeline' }, LADDER.map((l, i) => h('li', { class: i < r.index ? 'done' : i === r.index ? 'now' : '' },
+    h('span', { class: 'node' }, i < r.index ? icon('check', 14) : i === r.index ? icon('ball', 16) : null),
+    h('b', {}, l.name), h('span', {}, plural(l.at, 'video')))));
+  mount(h('div', { class: 'screen' }, topbar('Your level', () => go(moveScreen)), h('div', { class: 'hero-stat' }, head), timeline));
 }
 
 // ---------- 10. Progress ----------
@@ -270,7 +327,7 @@ function clearAllButton(move) {
   let armed = 0;
   const label = (t) => btn.replaceChildren(icon('trash', 18), t);
   const btn = h('button', { class: 'btn ghost danger', onClick: () => {
-    if (!armed) { label('Tap again to delete everything'); armed = setTimeout(() => { armed = 0; label('Clear all entries'); }, 4000); return; }
+    if (!armed) { label('Tap again to delete all scores (level and streak stay)'); armed = setTimeout(() => { armed = 0; label('Clear all entries'); }, 4000); return; }
     clearTimeout(armed);
     if (!store.clearSessions(S.profile.id, move.id)) return toast('Could not clear (storage problem)');
     buzz(15); toast('All entries cleared'); go(progressScreen, move);

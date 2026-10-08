@@ -1,5 +1,14 @@
 // Coaching copy per metric (what / why / how to improve) + personalised advice text.
 // Template sentences always work offline; an optional LLM proxy can replace the "improve" text.
+/** How the metrics are grouped on the report. */
+export const CATEGORIES = [
+  { id: 'shot', name: 'Shot mechanics' },
+  { id: 'base', name: 'Legs & balance' },
+  { id: 'rhythm', name: 'Timing' },
+];
+const CAT = { releaseAngle: 'shot', elbowAngle: 'shot', elbowAlignment: 'shot', releaseHeight: 'shot', followThrough: 'shot', guideHand: 'shot',
+  kneeDip: 'base', forwardDrift: 'base', sideDrift: 'base', stance: 'base', tempo: 'rhythm', legArmTiming: 'rhythm' };
+
 export const SHOOTING_COPY = {
   releaseAngle: {
     name: 'Release angle', short: 'Release',
@@ -85,13 +94,16 @@ export const SHOOTING_COPY = {
   },
   stance: {
     name: 'Stance width', short: 'Stance',
-    what: 'How far apart your feet are before you shoot, compared with your shoulder width (seen from the front).',
+    what: 'How far apart your feet are before you shoot: compared with your shoulder width from the front, estimated from depth in shin lengths from the side.',
     why: 'Feet about shoulder width apart give a stable base. Too close together and you wobble (the bigger problem), too wide and you lose the power from your legs.',
-    improve: (v, r, res) => res.status === 'good'
-      ? `Your feet are ${fmt(v, 2)} shoulder widths apart, a stable base.`
-      : v < r.good[0]
-        ? `Your feet are ${fmt(v, 2)} shoulder widths apart; aim for ${r.good[0]}–${r.good[1]}. Step them out to about shoulder width or a little wider, so you have a steady base.`
-        : `Your feet are ${fmt(v, 2)} shoulder widths apart; aim for ${r.good[0]}–${r.good[1]}. Bring them in a little so your legs can push straight up.`,
+    improve: (v, r, res) => {
+      const u = res.unit === 'shoulders' ? 'shoulder widths' : 'shin lengths', est = res.unit === 'shoulders' ? '' : ' (an estimate from the side)';
+      return res.status === 'good'
+        ? `Your feet are ${fmt(v, 2)} ${u} apart${est}, a stable base.`
+        : v < r.good[0]
+          ? `Your feet are ${fmt(v, 2)} ${u} apart${est}; aim for ${r.good[0]}–${r.good[1]}. Step them out to about shoulder width or a little wider, so you have a steady base.`
+          : `Your feet are ${fmt(v, 2)} ${u} apart${est}; aim for ${r.good[0]}–${r.good[1]}. Bring them in a little so your legs can push straight up.`;
+    },
   },
   sideDrift: {
     name: 'Sideways drift', short: 'Balance',
@@ -113,6 +125,7 @@ export const SHOOTING_COPY = {
 
 function fmt(v, d) { return Number(v).toFixed(d); }
 
+for (const id of Object.keys(SHOOTING_COPY)) SHOOTING_COPY[id].cat = CAT[id];
 export const COPY = { shooting: SHOOTING_COPY };
 
 /** One set of cut-offs for the overall score, shared by the score label and the meter. */

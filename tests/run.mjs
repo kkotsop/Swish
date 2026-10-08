@@ -8,6 +8,7 @@ import { rangeFromValues, rangesFromClips } from '../js/calibrate.js';
 import { templateAdvice, personalisedAdvice, scoreBand } from '../js/coaching.js';
 import { playerBox, fitAspect } from '../js/crop.js';
 import { project, rubberband } from '../js/motion.js';
+import { weekIndex, journey, milestones, rankFor, LADDER } from '../js/journey.js';
 
 const config = JSON.parse(fs.readFileSync(new URL('../config/settings.json', import.meta.url)));
 const run = (o) => { const s = makeShot(o); return { s, r: analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config }) }; };
@@ -146,11 +147,16 @@ test('a standing clip is flagged as a doubtful shot or rejected, never trusted',
   assert.ok(!r.ok || r.weakShot);
 });
 
-test('stance is measured from the front only, and too close is punished harder than too wide', () => {
+test('stance: measured from the front, estimated from depth (low confidence) from the side; too close is punished harder than too wide', () => {
   const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
   near(front.metrics.stance.value, 0.57, 0.08, 'feet 0.08 apart, shoulders 0.14 apart');
   assert.notEqual(front.metrics.stance.status, 'good'); // too narrow for the 0.9-1.5 zone
-  assert.ok(!('stance' in run({}).r.metrics) && !('footStagger' in run({}).r.metrics), 'no sideways stance from the side');
+  const side = run({}).r, narrow = run({ stanceDepth: 0.01 }).r, wide = run({ stanceDepth: 0.2 }).r;
+  assert.ok(side.metrics.stance, 'the side view has a stance card too');
+  assert.equal(side.metrics.stance.confidence, 'low', 'depth from one camera is rough');
+  assert.equal(side.metrics.stance.status, 'good', `${side.metrics.stance.value}`);
+  assert.ok(narrow.metrics.stance.value < side.metrics.stance.value && wide.metrics.stance.value > side.metrics.stance.value, 'follows how far apart the feet are in depth');
+  assert.notEqual(narrow.metrics.stance.status, 'good');
   const rg = config.moves.shooting.ranges.stance;
   const tooClose = scoreValue(rg.good[0] - 0.3, rg), tooWide = scoreValue(rg.good[1] + 0.3, rg);
   assert.ok(tooClose.score < tooWide.score, `close ${tooClose.score} vs wide ${tooWide.score}`);
@@ -294,6 +300,83 @@ test('momentum projection and rubber-band resistance', () => {
   assert.equal(project(0), 0);
   assert.ok(project(1000) > 400 && project(-1000) < -400, 'a fast flick travels far, in its own direction');
   assert.ok(rubberband(100, 400) < 100 && rubberband(400, 400) < rubberband(800, 400), 'resists, but never stops dead');
+});
+
+// ---- journey: levels, weekly streak, rest weeks, milestones
+const at = (y, m, d, h = 12) => new Date(y, m - 1, d, h).getTime();
+const mondayOf = (k) => at(2026, 1, 5) + k * 7 * 864e5; // 2026-01-05 is a Monday; k weeks later (noon, so DST is safe)
+const inWeeks = (...ks) => ks.flatMap((k) => (Array.isArray(k) ? Array.from({ length: k[1] }, () => ({ ts: mondayOf(k[0]) })) : [{ ts: mondayOf(k) }]));
+
+test('weeks run Monday to Sunday in local time, across New Year and a clock change', () => {
+  assert.equal(weekIndex(at(2026, 3, 1, 23)), weekIndex(at(2026, 2, 23, 1)), 'Sunday night is in the same week as the Monday before');
+  assert.equal(weekIndex(at(2026, 3, 2, 1)), weekIndex(at(2026, 3, 1, 23)) + 1, 'Monday morning starts the next week');
+  assert.equal(weekIndex(at(2026, 3, 30, 9)), weekIndex(at(2026, 3, 28, 9)) + 1, 'across the spring clock change');
+  assert.equal(weekIndex(at(2026, 10, 26, 9)), weekIndex(at(2026, 10, 24, 9)) + 1, 'across the autumn clock change');
+  assert.equal(weekIndex(at(2027, 1, 1)), weekIndex(at(2026, 12, 28)), 'New Year inside one week');
+});
+
+test('levels: thresholds, and at most 3 videos a week count', () => {
+  assert.equal(rankFor(0).name, null); assert.equal(rankFor(0).next, 'Noobie'); assert.equal(rankFor(0).toNext, 1);
+  for (const l of LADDER) { assert.equal(rankFor(l.at).name, l.name); if (l.at > 1) assert.notEqual(rankFor(l.at - 1).name, l.name); }
+  assert.equal(rankFor(26).next, null); assert.equal(rankFor(99).name, 'Elite');
+  assert.equal(LADDER[LADDER.length - 1].at, 26, 'Elite is 26 videos: about 6 months at one a week');
+  const j = journey(inWeeks([0, 5], 1), mondayOf(1));
+  assert.equal(j.total, 6); assert.equal(j.counted, 4, '5 in one week count as 3, plus 1');
+  assert.equal(j.rank.name, 'Hooper'); assert.equal(j.rank.next, 'Baller'); assert.equal(j.rank.toNext, 3);
+});
+
+test('weekly streak: grows, earns rest weeks, survives a miss with one, resets without', () => {
+  const four = journey(inWeeks(0, 1, 2, 3), mondayOf(3));
+  assert.equal(four.streak, 4); assert.equal(four.restHeld, 1, 'rest week earned at 4 in a row');
+  const kept = journey(inWeeks(0, 1, 2, 3, 5), mondayOf(5));
+  assert.equal(kept.streak, 5); assert.equal(kept.restHeld, 0, 'week 4 missed, rest week used, streak kept (not grown)');
+  assert.equal(kept.weeks.find((w) => w.index === weekIndex(mondayOf(4))).state, 'rest');
+  const broke = journey(inWeeks(0, 1, 2, 3, 6), mondayOf(6));
+  assert.equal(broke.streak, 1, 'two misses with one rest week: back to the start'); assert.equal(broke.best, 4);
+  const many = journey(inWeeks(...Array.from({ length: 16 }, (_, k) => k)), mondayOf(15));
+  assert.equal(many.restHeld, 2, 'never more than 2 rest weeks held'); assert.equal(many.streak, 16);
+  const pending = journey(inWeeks(0, 1), mondayOf(2));
+  assert.equal(pending.streak, 2, 'the current week has not ended, so it does not break the streak');
+  assert.equal(pending.weeks[pending.weeks.length - 1].state, 'current');
+  assert.equal(journey([], mondayOf(0)).streak, 0);
+});
+
+test('milestones: first, fifth, level-up and week-in-a-row fire exactly once', () => {
+  const step = (prev, add, now) => milestones(journey(prev, now), journey([...prev, ...add], now));
+  const one = step([], inWeeks(0), mondayOf(0));
+  assert.ok(one.first && one.big); assert.deepEqual(one.rankUp, { from: null, to: 'Noobie' });
+  const four = inWeeks(0, 1, 2, 3);
+  const fifth = step(four, inWeeks(4), mondayOf(4));
+  assert.ok(fifth.fifth && !fifth.first); assert.equal(fifth.weekInRow.n, 5);
+  assert.ok(!fifth.rankUp, 'still Hooper at 5');
+  const sixth = step([...four, ...inWeeks(4)], inWeeks(4), mondayOf(4));
+  assert.ok(!sixth.fifth && !sixth.weekInRow && !sixth.rankUp, 'second video of the same week is not a new week in a row');
+  const baller = step(inWeeks(0, 1, 2, 3, 4, 5), inWeeks(6), mondayOf(6));
+  assert.deepEqual(baller.rankUp, { from: 'Hooper', to: 'Baller' }, 'level-up exactly at 7');
+  const quiet = step(inWeeks(0, 1, 2, 3, 4, 5, 6, 7), inWeeks(8), mondayOf(8));
+  assert.ok(!quiet.big, `nothing big at 9 videos: ${JSON.stringify(quiet)}`);
+  assert.ok(step(inWeeks(0, 1, 2), inWeeks(3), mondayOf(3)).restEarned, 'rest week earned is reported');
+});
+
+test('clearing the scores keeps the practice log, so level and streak survive', async () => {
+  const mem = new Map();
+  globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+  const store = await import('../js/store.js');
+  // a session saved before the log existed (only in swish.sessions), and two saved normally
+  mem.set('swish.sessions', JSON.stringify([{ id: 'old', ts: mondayOf(0), profileId: 'p1', move: 'shooting', score: 50, metrics: {} }]));
+  store.addSession({ id: 'a', ts: mondayOf(1), profileId: 'p1', move: 'shooting', score: 60, metrics: {} });
+  store.addSession({ id: 'b', ts: mondayOf(2), profileId: 'p1', move: 'shooting', score: 70, metrics: {} });
+  store.addSession({ id: 'other', ts: mondayOf(2), profileId: 'p2', move: 'shooting', score: 70, metrics: {} });
+  assert.equal(store.activityForProfile('p1').length, 3);
+  assert.equal(journey(store.activityForProfile('p1'), mondayOf(2)).streak, 3);
+  assert.equal(store.clearSessions('p1', 'shooting'), true);
+  assert.equal(store.sessionsFor('p1', 'shooting').length, 0, 'scores and charts are gone');
+  const kept = store.activityForProfile('p1');
+  assert.equal(kept.length, 3, 'practice log kept, including the session that predates it');
+  assert.equal(journey(kept, mondayOf(2)).streak, 3); assert.equal(journey(kept, mondayOf(2)).total, 3);
+  assert.equal(store.activityForProfile('p2').length, 1, 'other profiles untouched');
+  store.addSession({ id: 'c', ts: mondayOf(3), profileId: 'p1', move: 'shooting', score: 80, metrics: {} });
+  assert.equal(journey(store.activityForProfile('p1'), mondayOf(3)).streak, 4, 'the streak carries on after a clear');
 });
 
 let passed = 0;

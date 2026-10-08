@@ -85,7 +85,7 @@ export function makeShot(opts = {}) {
       : { x: sho.x + 0.03 * face, y: sho.y + 0.12 };
     const gElbow = { x: sho.x + 0.02 * face, y: sho.y + 0.1 - 0.04 };
     const lm = new Array(33).fill(null).map(() => ({ x: 0, y: 0, z: 0, v: 0.95 }));
-    const put = (idx, p) => { lm[idx] = { x: p.x / ASPECT, y: p.y, z: 0, v: 0.95 }; };
+    const put = (idx, p, z = 0) => { lm[idx] = { x: p.x / ASPECT, y: p.y, z, v: 0.95 }; };
     const right = o.rightHanded;
     put(0, nose);
     put(right ? 12 : 11, sho); put(right ? 11 : 12, sho);
@@ -94,7 +94,8 @@ export function makeShot(opts = {}) {
     put(right ? 20 : 19, index); put(right ? 19 : 20, { x: gWrist.x + 0.02 * face, y: gWrist.y });
     for (const k of [23, 24]) put(k, hip);
     for (const k of [25, 26]) put(k, knee);
-    for (const k of [27, 28]) put(k, ankle);
+    // feet shoulder-width apart in depth (the camera looks at them from the side): left ankle nearer, right ankle further
+    put(27, ankle, -(o.stanceDepth ?? 0.07) / ASPECT); put(28, ankle, (o.stanceDepth ?? 0.07) / ASPECT);
     frames.push({ t: tt, lm });
     truth.push({ wrist, shoulder: sho });
   }

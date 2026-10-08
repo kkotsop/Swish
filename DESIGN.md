@@ -37,4 +37,4 @@ Radii `--r-sm` 14, `--r-md` 20, `--r-lg` 28, plus pills. Spacing `--gap-1`…`--
 
 ## Components
 
-Glass card (`.panel`, `.chip`, `.fact`), pill button (`.btn`, `.btn.alt`, `.btn.ghost`), segmented toggle (`.seg`), status label (`.flag`), score meter and target-zone bar (`.meter`, `.meter.zones`), check pills (`.tips`), moves carousel (`.carousel`, `.move`), Stories report (`.stories`, `.slide`, `.bars`).
+Level pill beside the greeting (`.greet`, `.level-pill`, flame + number for the streak), weekly strip (`.weeks`, `.wk`), level timeline (`.timeline`), metric categories (`.cat`, `.mcat`), full-screen celebration (`.celebrate`, CSS confetti, fades only with Reduce Motion), glass card (`.panel`, `.chip`, `.fact`), pill button (`.btn`, `.btn.alt`, `.btn.ghost`), segmented toggle (`.seg`), status label (`.flag`), score meter and target-zone bar (`.meter`, `.meter.zones`), check pills (`.tips`), moves carousel (`.carousel`, `.move`), Stories report (`.stories`, `.slide`, `.bars`).

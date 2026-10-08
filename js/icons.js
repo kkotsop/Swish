@@ -10,6 +10,8 @@ const P = {
   upload: '<path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 19h14"/>',
   record: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  next: '<path d="M9 5l7 7-7 7"/>',
+  moon: '<path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/>',
   trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10 11v5M14 11v5"/>',
   chart: '<path d="M5 19v-8M12 19V5M19 19v-5"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
@@ -77,6 +79,19 @@ export function throwSvg() {
       <circle r="11.5" fill="#c4622a"/>
       <g fill="none" stroke="#231208" stroke-width="1.5" stroke-linecap="round"><path d="M0 -11.5 V11.5 M-11.5 0 H11.5"/><path d="M-7 -9 C-3 -4 -3 4 -7 9 M7 -9 C3 -4 3 4 7 9"/></g>
     </g></g>
+  </svg>`;
+  return w;
+}
+
+/** A basketball on fire: the streak icon. Own colours (not currentColor) so the flame stays orange anywhere. */
+export function ballFireIcon(size = 18) {
+  const w = document.createElement('span');
+  w.className = 'ico ballfire'; w.setAttribute('aria-hidden', 'true');
+  w.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}">
+    <path d="M12 .8c.6 2.7 5.2 4.3 5.2 9.1a5.2 5.2 0 0 1-10.4 0c0-2 1-3.4 2-4.3.2 1.2.8 1.9 1.7 2.1C10.3 5 10.7 2.9 12 .8z" fill="#ff8a1f"/>
+    <path d="M12 3.9c.4 1.6 2.6 2.5 2.6 4.8a2.6 2.6 0 0 1-5.2 0c0-1 .5-1.8 1-2.3.1.6.4 1 .9 1.1 0-1.2.2-2.1.7-3.6z" fill="#ffd84d"/>
+    <circle cx="12" cy="15.4" r="7.1" fill="#c4622a"/>
+    <path d="M12 8.3v14.2M4.9 15.4h14.2M7.5 10c2.2 2.6 2.2 7.2 0 10.2M16.5 10c-2.2 2.6-2.2 7.2 0 10.2" fill="none" stroke="#231208" stroke-width="1.3" stroke-linecap="round"/>
   </svg>`;
   return w;
 }
