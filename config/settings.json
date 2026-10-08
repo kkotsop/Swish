@@ -3,14 +3,15 @@
   "analysisFps": 30,
   "clipSeconds": 5,
   "minFps": 60,
-  "hardMinFps": 24,
+  "hardMinFps": 10,
   "quality": {
-    "minPersonFrames": 0.6,
+    "minPersonFrames": 0.25,
     "minBrightness": 45,
     "secondPersonSizeRatio": 0.55,
     "secondPersonCentralBand": [0.25, 0.75],
     "secondPersonFrameShare": 0.25,
-    "minSubjectHeight": 0.3
+    "minSubjectHeight": 0.3,
+    "fatalSubjectHeight": 0.08
   },
   "llm": {
     "proxyUrl": "",
@@ -20,7 +21,7 @@
     "shooting": {
       "weights": {
         "releaseAngle": 1, "forwardDrift": 1, "elbowAngle": 1, "kneeDip": 1,
-        "elbowAlignment": 1, "sideDrift": 1, "releaseHeight": 1, "followThrough": 1, "tempo": 1, "guideHand": 1
+        "elbowAlignment": 1, "sideDrift": 1, "releaseHeight": 1, "followThrough": 1, "tempo": 1, "legArmTiming": 1, "stance": 1, "footStagger": 1, "guideHand": 1
       },
       "ranges": {
         "releaseAngle":   { "good": [45, 55],   "tolerance": 10 },
@@ -32,6 +33,9 @@
         "sideDrift":      { "good": [0, 0.2],   "tolerance": 0.2 },
         "followThrough":  { "good": [40, 90],   "tolerance": 20 },
         "tempo":          { "good": [0.6, 1.2], "tolerance": 0.3 },
+        "legArmTiming":   { "good": [0, 0.15],  "tolerance": 0.15 },
+        "stance":         { "good": [0.9, 1.5], "tolerance": 0.3 },
+        "footStagger":    { "good": [0, 0.6],   "tolerance": 0.4 },
         "guideHand":      { "good": [0, 1.4],   "tolerance": 0.7 }
       }
     }

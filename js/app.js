@@ -5,7 +5,7 @@ import { MOVES } from './moves.js';
 import { guideSvg } from './guide.js';
 import { beep, onOrientationChange, openCamera, orientationNow, recordFor, stopStream, unlockAudio } from './capture.js';
 import { makeVideo, measureFps, preloadPose, whenReady } from './pose.js';
-import { checkFps, checkOrientation } from './precheck.js';
+import { checkFps } from './precheck.js';
 import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
 import { lineChart, trend } from './progress.js';
@@ -117,7 +117,7 @@ function filmScreen(view = 'side', file = null) {
           const s = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
           const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
           c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-          stage.replaceChildren(c); stage.classList.add('has-video');
+          stage.replaceChildren(c); stage.classList.add('has-video'); v.poster_ = c;
         } catch { /* keep the animation if the frame cannot be read */ }
       };
       v.addEventListener('loadeddata', poster, { once: true });
@@ -143,7 +143,7 @@ function recordScreen() {
 const captureScreen = (tab = 'upload') => (tab === 'record' ? recordScreen() : filmScreen());
 
 /** The three filming checks shown on the film and record screens. */
-const tips = () => h('div', { class: 'tips' }, ['60 fps+', 'Phone upright, 3 m', 'Full body in frame'].map((t) => h('span', { class: 'pill' }, icon('check', 14), t)));
+const tips = () => h('div', { class: 'tips' }, ['60 fps is best', 'Phone upright, 3 m', 'Full body in frame'].map((t) => h('span', { class: 'pill' }, icon('check', 14), t)));
 
 /** The camera (and its permission prompt) is only started once the user taps "Open camera". */
 function recordPane(body) {
@@ -226,9 +226,8 @@ async function startUpload(file, onVideo, stillHere = () => true) {
     const fps = await measureFps(v);
     if (!stillHere()) return URL.revokeObjectURL(v.src); // the user backed out while the clip was being read
     const fpsCheck = fps ? checkFps(fps, S.config) : null;
-    const msg = (fpsCheck && fpsCheck.level === 'block' && fpsCheck.message) || checkOrientation(v.videoWidth, v.videoHeight, S.move.orientation);
-    if (msg) { URL.revokeObjectURL(v.src); return go(errorScreen, msg); }
-    const clip = { video: v, fps, source: 'upload', total: v.duration };
+    if (fpsCheck && fpsCheck.level === 'block') { URL.revokeObjectURL(v.src); return go(errorScreen, fpsCheck.message); } // wrong orientation or low fps only lower the confidence
+    const clip = { video: v, fps, source: 'upload', total: v.duration, poster: v.poster_ };
     if (v.duration > S.config.clipSeconds + 0.3) go(trimScreen, clip); else go(analyzeScreen, { ...clip, start: 0, duration: v.duration });
   } catch (e) { if (v) URL.revokeObjectURL(v.src); if (stillHere()) go(errorScreen, e.message || 'Could not read this video.'); }
 }
@@ -269,11 +268,14 @@ async function analyzeScreen(clip) {
   const detail = h('p', {}, 'Starting…');
   const preview = h('canvas', { class: 'preview', style: { display: 'none' }, role: 'img', 'aria-label': 'Live view of the player being tracked' });
   const warn = clip.fps && checkFps(clip.fps, S.config);
+  const still = clip.poster && !(clip.start > 0) ? clip.poster : null; // the frame you just saw on the film screen stays up, so the hand-over to analysis does not flash a new loader
+  if (still) still.className = 'preview';
   mount(h('div', { class: 'screen', style: { alignItems: 'center', textAlign: 'center' } },
-    h('div', { class: 'spacer' }), ballSvg(), status, h('div', { class: 'progress-track', style: { width: '100%' }, role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail, preview, h('div', { class: 'spacer' }),
+    h('div', { class: 'spacer' }), still || ballSvg(), status, h('div', { class: 'progress-track', style: { width: '100%' }, role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail, preview, h('div', { class: 'spacer' }),
     warn ? h('div', { class: 'tiny-note' }, icon('alert', 14), warn.message) : null));
   try {
     const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
+      if (still) still.style.display = 'none';
       preview.style.display = ''; preview.width = src.width; preview.height = src.height;
       const ctx = preview.getContext('2d'); ctx.drawImage(src, 0, 0);
       if (lm) drawSkeleton(ctx, lm, { w: src.width, h: src.height, hand: null });

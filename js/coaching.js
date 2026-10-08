@@ -73,6 +73,34 @@ export const SHOOTING_COPY = {
         ? `Your shot takes ${fmt(v, 2)} s; aim for ${r.good[0]}–${r.good[1]} s. Dip and rise in one fluid motion without pausing at the set point.`
         : `Your shot takes ${fmt(v, 2)} s, quicker than the ${r.good[0]}–${r.good[1]} s zone. Slow the load slightly so legs and arm work together.`,
   },
+  legArmTiming: {
+    name: 'Leg-to-arm timing', short: 'Timing',
+    what: 'The gap between your legs finishing their push and your shooting arm finishing its extension.',
+    why: 'When the legs and arm work as one motion, the power flows up into the ball. A gap makes the shot two separate parts and costs rhythm and range.',
+    improve: (v, r, res) => res.status === 'good'
+      ? `Your arm and legs finish within ${fmt(v, 2)} s of each other, one smooth motion.`
+      : res.signed > 0
+        ? `Your arm finishes ${fmt(v, 2)} s after your legs; aim for under ${r.good[1]} s. Start extending the arm while your legs are still pushing, with no pause at the set point.`
+        : `Your arm finishes ${fmt(v, 2)} s before your legs; aim for under ${r.good[1]} s. Let the legs lead and the arm follow them up.`,
+  },
+  stance: {
+    name: 'Stance width', short: 'Stance',
+    what: 'How far apart your feet are before you shoot, compared with your shoulder width (seen from the front).',
+    why: 'Feet about shoulder width apart give a stable base. Too narrow and you wobble, too wide and you lose the power from your legs.',
+    improve: (v, r, res) => res.status === 'good'
+      ? `Your feet are ${fmt(v, 2)} shoulder widths apart, a stable base.`
+      : v < r.good[0]
+        ? `Your feet are ${fmt(v, 2)} shoulder widths apart; aim for ${r.good[0]}–${r.good[1]}. Step them out to about shoulder width or a little wider.`
+        : `Your feet are ${fmt(v, 2)} shoulder widths apart; aim for ${r.good[0]}–${r.good[1]}. Bring them in a little so your legs can push straight up.`,
+  },
+  footStagger: {
+    name: 'Foot position', short: 'Feet',
+    what: 'How far apart your feet are front to back before you shoot, measured in shin lengths (seen from the side).',
+    why: 'A small stagger with the shooting foot slightly ahead lines your hips and shoulders up with the rim. A big split throws you off balance.',
+    improve: (v, r, res) => res.status === 'good'
+      ? `Your feet are ${fmt(v, 2)} shin lengths apart front to back (${res.note}). A balanced base.`
+      : `Your feet are ${fmt(v, 2)} shin lengths apart front to back (${res.note}); aim for under ${r.good[1]}. Narrow the gap and keep your shooting foot just ahead.`,
+  },
   sideDrift: {
     name: 'Sideways drift', short: 'Balance',
     what: 'How far your body slides left or right between takeoff and landing, measured in shoulder widths (seen from the front).',
@@ -95,37 +123,8 @@ function fmt(v, d) { return Number(v).toFixed(d); }
 
 export const COPY = { shooting: SHOOTING_COPY };
 
-/** One set of cut-offs for the overall score, shared by the label and the summary. */
+/** One set of cut-offs for the overall score, shared by the score label and the meter. */
 export const scoreBand = (score) => (score >= 70 ? 'good' : score >= 50 ? 'borderline' : 'needs-work');
-
-/** One-line "do this next" per metric, used by the quick summary. */
-export const NEXT_STEP = {
-  releaseAngle: 'Shoot up, not out: drive through your legs and release at the top.',
-  forwardDrift: 'Jump straight up and land on the spot you took off from.',
-  elbowAngle: 'Set the ball in a clear L-shape, elbow near 90°, before you extend.',
-  kneeDip: 'Sit into the shot a little more so your legs power it.',
-  elbowAlignment: 'Keep your elbow under the ball and pointing at the rim.',
-  sideDrift: 'Square up, jump straight up and land in the same spot.',
-  releaseHeight: 'Release higher: extend fully and let go above your forehead.',
-  followThrough: 'Snap your wrist and hold the finish with fingers pointing down.',
-  tempo: 'Dip and rise in one smooth motion, no pause at the set point.',
-  guideHand: 'Keep your off hand on the side of the ball and let it come off at release.',
-};
-
-/**
- * Quick, plain-language summary for under the score: what it means, what works, what to do next.
- * metrics: { id: { score, status } }. Returns { meaning, works, next }.
- */
-export function summarize(move, metrics, score) {
-  const copy = COPY[move];
-  const list = Object.entries(metrics).filter(([, m]) => m.status !== 'unknown');
-  const meaning = score >= 85 ? 'Excellent form.' : score >= 70 ? 'Solid form.' : score >= 50 ? 'Getting there.' : 'Early days.';
-  const best = list.filter(([, m]) => m.status === 'good').sort((a, b) => b[1].score - a[1].score).slice(0, 2).map(([id]) => copy[id].name.toLowerCase());
-  const works = best.length ? `Working well: ${best.join(' and ')}.` : 'Nothing is in the green yet. Pick one fix.';
-  const worst = list.filter(([, m]) => m.status !== 'good').sort((a, b) => a[1].score - b[1].score)[0];
-  const next = worst ? `Next: ${NEXT_STEP[worst[0]]}` : 'Next: film a few more shots to check this is repeatable.';
-  return { meaning, works, next };
-}
 
 /** Template advice for every metric. Returns { metricId: string }. */
 export function templateAdvice(move, metrics, ranges) {

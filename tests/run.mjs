@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { analyzeShooting, headlineScore, scoreValue, SIDE_METRICS, FRONT_METRICS } from '../js/shooting.js';
 import { makeShot, makeFrontShot, ASPECT } from './synth.js';
-import { selectSubject, checkTracking, checkOrientation, checkFps, poseBox } from '../js/precheck.js';
+import { selectSubject, assessTracking, checkOrientation, checkFps, poseBox } from '../js/precheck.js';
 import { rangeFromValues, rangesFromClips } from '../js/calibrate.js';
-import { templateAdvice, personalisedAdvice, summarize, scoreBand } from '../js/coaching.js';
+import { templateAdvice, personalisedAdvice, scoreBand } from '../js/coaching.js';
 import { playerBox, fitAspect } from '../js/crop.js';
 import { project, rubberband } from '../js/motion.js';
 
@@ -75,14 +75,15 @@ test('release angle is never negative and elbow-at-set is a real bent elbow', ()
   }
 });
 
-test('arms held straight up with no bend-to-extend is not a shot', () => {
+test('arms held straight up with no bend-to-extend is analysed with low confidence', () => {
   const sh = makeShot({});
   for (const f of sh.frames) { // freeze the right arm straight up for the whole clip
     const S = f.lm[12];
     f.lm[14] = { ...S, y: S.y - 0.1 }; f.lm[16] = { ...S, y: S.y - 0.2 }; f.lm[20] = { ...S, y: S.y - 0.24 };
   }
   const r = analyzeShooting(sh.frames, { aspect: ASPECT, fps: 60, config });
-  assert.equal(r.ok, false); assert.equal(r.error, 'no-shot');
+  assert.ok(r.ok && r.weakShot, 'still analysed, but flagged'); // forgiving: low confidence instead of a rejection
+  assert.ok(Object.values(r.metrics).every((m) => m.confidence === 'low'));
 });
 
 test('a nearly straight elbow at the set point is never trusted (low confidence)', () => {
@@ -122,10 +123,11 @@ test('front view is detected and measures only what it can (elbow alignment, off
   assert.ok(rh > 0.9 && rh < 1.6, `release height ${rh}`);
 });
 
-test('static front pose with raised arms is not a shot', () => {
+test('static front pose with raised arms is analysed with low confidence', () => {
   const sh = makeFrontShot({});
   for (const f of sh.frames) { const S = f.lm[12]; f.lm[14] = { ...S, y: S.y - 0.1 }; f.lm[16] = { ...S, y: S.y - 0.2 }; f.lm[20] = { ...S, y: S.y - 0.24 }; }
-  assert.equal(analyzeShooting(sh.frames, { aspect: ASPECT, fps: 60, config }).ok, false);
+  const r = analyzeShooting(sh.frames, { aspect: ASPECT, fps: 60, config });
+  assert.ok(r.ok && r.weakShot);
 });
 
 test('follow-through is good from 40 degrees; release height measured where the ball leaves the hand', () => {
@@ -136,16 +138,36 @@ test('follow-through is good from 40 degrees; release height measured where the 
   assert.notEqual(weak.metrics.followThrough.status, 'good');
 });
 
-test('quick summary: meaning, what works, next step', () => {
-  const { r } = run({ releaseDirDeg: 25 });
-  const sm = summarize('shooting', r.metrics, headlineScore(r.metrics, config.moves.shooting.weights));
-  assert.ok(sm.meaning.length > 10 && /Working well|Nothing is in the green/.test(sm.works) && /^Next: /.test(sm.next));
-});
-
-test('no shot in a standing clip is reported', () => {
+test('a standing clip is flagged as a doubtful shot or rejected, never trusted', () => {
   const s = makeShot({ kneeFlex: 5, releaseT: 99, dipStart: 99, dipEnd: 99.1, riseEnd: 99.2, landT: 99.3 });
   const r = analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config });
-  assert.equal(r.ok, false);
+  assert.ok(!r.ok || r.weakShot);
+});
+
+test('stance (front) and foot position (side) are measured', () => {
+  const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
+  near(front.metrics.stance.value, 0.57, 0.08, 'feet 0.08 apart, shoulders 0.14 apart');
+  assert.notEqual(front.metrics.stance.status, 'good'); // too narrow for the 0.9-1.5 zone
+  const side = run({}).r;
+  near(side.metrics.footStagger.value, 0, 0.05, 'feet level in the side synth');
+  assert.equal(side.metrics.footStagger.status, 'good');
+});
+
+test('leg-to-arm timing: arm finishing long after the legs is flagged, a close finish is good', () => {
+  const smooth = run({}).r, late = run({ releaseT: 2.1, landT: 2.5 }).r;
+  assert.ok(Number.isFinite(smooth.metrics.legArmTiming.value));
+  assert.ok(late.metrics.legArmTiming.value > smooth.metrics.legArmTiming.value + 0.1, `${late.metrics.legArmTiming.value} vs ${smooth.metrics.legArmTiming.value}`);
+  assert.equal(late.metrics.legArmTiming.signed > 0, true);
+  assert.equal(late.metrics.legArmTiming.status === 'good', false);
+  const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
+  assert.ok(Number.isFinite(front.metrics.legArmTiming.value));
+});
+
+test('every metric of every view has copy, advice, a range and a weight', () => {
+  const ranges = config.moves.shooting.ranges, weights = config.moves.shooting.weights;
+  const metrics = Object.fromEntries([...new Set([...SIDE_METRICS, ...FRONT_METRICS])].map((id) => [id, { value: 1, unit: '', status: 'borderline', score: 50, signed: 1, note: '' }]));
+  const adv = templateAdvice('shooting', metrics, ranges);
+  for (const id of Object.keys(metrics)) { assert.ok(ranges[id] && id in weights, id); assert.ok(adv[id].length > 10, id); }
 });
 
 test('scoreValue: good / borderline / needs-work', () => {
@@ -162,34 +184,31 @@ test('subject selection ignores a small peripheral person', () => {
   const per = Array.from({ length: 60 }, () => [person(0.5, 0.6), person(0.9, 0.2)]);
   const sub = selectSubject(per, per.map((_, i) => i / 60), config);
   assert.equal(sub.secondShare, 0);
-  assert.equal(checkTracking({ subject: sub, total: 60, brightness: 120 }, config), null);
+  assert.deepEqual(assessTracking({ subject: sub, total: 60, brightness: 120 }, config), { fatal: null, notes: [] });
 });
 
-test('large central second person triggers the multiple-people warning', () => {
+test('a large central second person is a note, not a rejection', () => {
   const per = Array.from({ length: 60 }, () => [person(0.45, 0.6), person(0.6, 0.55)]);
   const sub = selectSubject(per, per.map((_, i) => i / 60), config);
-  assert.equal(checkTracking({ subject: sub, total: 60, brightness: 120 }, config).code, 'multiple');
+  const a = assessTracking({ subject: sub, total: 60, brightness: 120 }, config);
+  assert.equal(a.fatal, null); assert.deepEqual(a.notes.map((x) => x.code), ['multiple']);
 });
 
-test('false detections (ball/hoop-like poses) are ignored; tiny subject gets a clear message', () => {
+test('false detections are ignored; a small or dark clip is accepted with notes; nobody at all is rejected', () => {
   const flat = Array.from({ length: 33 }, (_, i) => ({ x: 0.5 + (i % 3) * 0.01, y: 0.4 + (i % 2) * 0.01, z: 0, v: 0.9 })); // everything in one spot
   const sub0 = selectSubject(Array.from({ length: 60 }, () => [flat]), Array.from({ length: 60 }, (_, i) => i / 60), config);
   assert.equal(sub0.withPerson, 0);
   const tiny = Array.from({ length: 60 }, () => [person(0.5, 0.25)]);
-  const sub1 = selectSubject(tiny, tiny.map((_, i) => i / 60), config);
-  const c = checkTracking({ subject: sub1, total: 60, brightness: 120 }, config);
-  assert.ok(c && (c.code === 'too-small' || c.code === 'no-person'), JSON.stringify(c));
+  const small = assessTracking({ subject: selectSubject(tiny, tiny.map((_, i) => i / 60), config), total: 60, brightness: 10 }, config);
+  assert.equal(small.fatal, null); assert.deepEqual(small.notes.map((x) => x.code).sort(), ['dark', 'too-small']);
   const big = Array.from({ length: 60 }, () => [person(0.5, 0.7)]);
-  assert.equal(checkTracking({ subject: selectSubject(big, big.map((_, i) => i / 60), config), total: 60, brightness: 120 }, config), null);
+  assert.deepEqual(assessTracking({ subject: selectSubject(big, big.map((_, i) => i / 60), config), total: 60, brightness: 120 }, config), { fatal: null, notes: [] });
+  const none = selectSubject(Array.from({ length: 60 }, () => []), big.map((_, i) => i), config);
+  assert.equal(assessTracking({ subject: none, total: 60, brightness: 120 }, config).fatal.code, 'no-person');
 });
 
-test('dark, no-person, orientation, fps messages are specific', () => {
-  const per = Array.from({ length: 60 }, () => [person(0.5, 0.6)]);
-  const sub = selectSubject(per, per.map((_, i) => i / 60), config);
-  assert.equal(checkTracking({ subject: sub, total: 60, brightness: 10 }, config).code, 'dark');
-  const none = selectSubject(Array.from({ length: 60 }, () => []), per.map((_, i) => i), config);
-  assert.equal(checkTracking({ subject: none, total: 60, brightness: 120 }, config).code, 'no-person');
-  assert.match(checkOrientation(1920, 1080, 'portrait'), /rotate your phone to portrait/);
+test('orientation is only a note; only a hopeless frame rate is blocked', () => {
+  assert.match(checkOrientation(1920, 1080, 'portrait'), /not portrait.*still try/);
   assert.equal(checkOrientation(1080, 1920, 'portrait'), null);
   assert.equal(checkFps(30, config).level, 'warn');
   assert.match(checkFps(30, config).message, /30 fps.*low quality.*60 fps or higher/);
@@ -197,8 +216,9 @@ test('dark, no-person, orientation, fps messages are specific', () => {
   assert.equal(checkFps(59.94, config), null);
   assert.equal(checkFps(58.2, config), null);
   assert.equal(checkFps(45, config).level, 'warn');
-  assert.equal(checkFps(20, config).level, 'block');
-  assert.match(checkFps(20, config).message, /20 fps.*at least 24 fps/);
+  assert.equal(checkFps(24, config).level, 'warn');
+  assert.equal(checkFps(8, config).level, 'block');
+  assert.match(checkFps(8, config).message, /8 fps.*at least 10 fps/);
 });
 
 test('calibration range = observed range plus buffer', () => {
@@ -219,11 +239,9 @@ test('template advice is personalised with the number; LLM failure falls back', 
   assert.equal(ok.tempo, 'Slow down, champ.'); assert.equal(ok.kneeDip, adv.kneeDip);
 });
 
-test('overall score bands match the summary wording', () => {
+test('overall score bands', () => {
   assert.equal(scoreBand(70), 'good'); assert.equal(scoreBand(69), 'borderline');
   assert.equal(scoreBand(50), 'borderline'); assert.equal(scoreBand(49), 'needs-work');
-  assert.match(summarize('shooting', {}, 72).meaning, /Solid|Excellent/);
-  assert.match(summarize('shooting', {}, 45).meaning, /Early/);
 });
 
 test('report crop keeps the whole player, is never a narrow strip and stays inside the frame', () => {

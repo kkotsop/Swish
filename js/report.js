@@ -67,11 +67,10 @@ function paintCropped(canvas, img, lm, box, { hand, highlight = null, dim = 0 })
   canvas.getContext('2d').drawImage(scratch, c.x, c.y, c.w, c.h, 0, 0, canvas.width, canvas.height);
 }
 
-function frameCanvas(still, { hand, metricId, onInfo }) {
+function frameCanvas(still, { hand, metricId }) {
   const wrap = h('div', { class: 'frame-wrap rise pop' });
   const canvas = h('canvas', { role: 'img', 'aria-label': 'Key frame of your shot with the tracked joints drawn on' });
   wrap.append(canvas);
-  if (onInfo) wrap.append(h('button', { class: 'rail', onClick: onInfo, 'aria-label': 'About this metric' }, icon('info', 24)));
   const img = new Image();
   const box = playerBox([still.lm]);
   img.onload = () => paintCropped(canvas, img, still.lm, box, { hand, highlight: focusJoint(metricId, hand), dim: 0.12 });
@@ -111,7 +110,7 @@ export function showMetricSheet(root, { move, id, result }) {
     y = v; sheet.style.transform = `translateY(${v}px)`;
     bg.style.background = `rgba(0,0,0,${(0.6 * Math.max(0, 1 - Math.max(0, v) / (height() || 1))).toFixed(3)})`;
   };
-  const finish = () => { bg.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus(); };
+  const finish = () => { bg.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus({ preventScroll: true }); };
   const dismiss = (velocity = 0) => {
     if (closing) return; closing = true;
     if (anim) anim.cancel();
@@ -174,7 +173,7 @@ export function showMetricSheet(root, { move, id, result }) {
   root.append(bg);
   setY(height()); // start below the screen, then spring up
   if (reducedMotion()) setY(0); else anim = spring({ from: height(), to: 0, response: 0.35, damping: 1, onUpdate: setY });
-  closeBtn.focus();
+  closeBtn.focus({ preventScroll: true }); // a plain focus() scrolls the page to reach the off-screen sheet, which left it half open
 }
 
 /** Build the whole report. actions: { onRetry, onProgress, onHome } */
@@ -183,9 +182,9 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
   const slides = [], marks = [];
   const ids = result.metricIds || move.metrics;
   const open = (id) => { if (root.querySelector('.sheet-bg')) return; buzz(8); showMetricSheet(root, { move, id, result }); }; // a double tap must not stack two sheets
-  const band = scoreBand(result.score); // same cut-offs as the summary text
+  const band = scoreBand(result.score);
 
-  // Slide 1: score, quick summary, every metric as a /100 chip.
+  // Slide 1: the score and every metric as a /100 chip.
   const chips = ids.filter((id) => result.metrics[id]).map((id) => {
     const m = result.metrics[id];
     return h('button', { class: `chip ${m.status}`, onClick: () => open(id), 'aria-label': `${move.copy[id].name}, ${m.status === 'unknown' ? 'not measured' : `${m.score} out of 100`}, ${STATUS_LABEL[m.status]}, ${CONF_WORD[m.confidence]} tracking confidence. Opens details.` },
@@ -193,7 +192,6 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
       h('span', { class: 'dot' }, icon(STATUS_ICON[m.status] || 'dash', 18)),
       h('b', {}, move.copy[id].short), h('span', { class: 'val' }, m.status === 'unknown' ? '—' : String(m.score), h('em', {}, '/100')));
   });
-  const sm = result.summary;
   // The score owns the slide: one number, its status label, and a band meter showing where it falls and why it carries that label.
   const BANDS = [{ k: 'needs-work', w: 50 }, { k: 'borderline', w: 20 }, { k: 'good', w: 30 }];
   const track = h('div', { class: 'track' }, BANDS.map((b) => h('i', { class: `seg ${b.k}${b.k === band ? ' on' : ''}`, style: { flexBasis: `${b.w}%` } })));
@@ -210,9 +208,7 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
       h('span', { class: 'pill' }, result.handAmbiguous ? 'Hand unclear' : `${result.hand === 'right' ? 'Right' : 'Left'} hand`),
       h('span', { class: 'who' }, profile.name)),
     hero,
-    sm ? h('div', { class: 'summary rise' }, h('b', {}, sm.meaning), h('span', {}, icon('check', 18), sm.works), h('span', {}, icon('up', 18), sm.next)) : null,
     h('div', { class: 'chips rise' }, chips),
-    h('p', { class: 'hint rise' }, 'Tap a card for details · swipe up for more'),
     ...[...(result.warnings || []), result.handAmbiguous ? 'Could not tell which hand you shoot with, so treat arm metrics with care.' : null].filter(Boolean)
       .map((w) => h('div', { class: 'tiny-note rise' }, icon('alert', 14), w)));
   slides.push(first);
@@ -226,25 +222,17 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
       h('p', { class: 'why rise' }, 'Green box: the player we tracked. Pink: your shooting arm. Wrong person? Record again with just you in frame.')));
   }
 
-  // Issue slides: one per flagged metric, worst first.
-  const flagged = ids.filter((id) => result.metrics[id] && result.metrics[id].status !== 'good').sort((a, b) => result.metrics[a].score - result.metrics[b].score);
-  for (const id of flagged) {
+  // One slide per metric, worst first, so every metric has its own card (including the ones in the green).
+  const ordered = ids.filter((id) => result.metrics[id]).sort((a, b) => result.metrics[a].score - result.metrics[b].score);
+  for (const id of ordered) {
     const m = result.metrics[id], c = move.copy[id], r = result.ranges[id];
-    slides.push(h('section', { class: 'slide', 'aria-label': c.name },
+    slides.push(h('section', { class: 'slide metric', 'aria-label': c.name },
       h('div', { class: 'rise' }, badge(m.status)),
-      result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id, onInfo: () => open(id) }) : null,
+      result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id }) : null,
       h('div', { class: 'cap rise' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`),
       factsBlock(m, r), zoneBar(m, r, marks),
-      h('h4', { class: 'rise' }, 'How to improve'), h('p', { class: 'fix rise' }, result.advice[id]),
+      h('h4', { class: 'rise' }, m.status === 'good' ? 'Keep it up' : 'How to improve'), h('p', { class: 'fix rise' }, result.advice[id]),
       h('h4', { class: 'rise' }, 'Why it matters'), h('p', { class: 'why rise' }, c.why)));
-  }
-  if (!flagged.length) {
-    const m = result.metrics[ids[0]] || Object.values(result.metrics)[0];
-    slides.push(h('section', { class: 'slide', 'aria-label': 'Clean form' },
-      h('div', { class: 'rise' }, badge('good')),
-      result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: m.id }) : null,
-      h('div', { class: 'cap rise' }, 'Clean form'),
-      h('p', { class: 'fix rise' }, 'Everything is in the good zone. Film a few more shots to check it holds.')));
   }
 
   // Final slide: wrap-up actions.
@@ -299,7 +287,9 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
     ticking = false;
     const H = scroller.clientHeight || 1, st = scroller.scrollTop;
     slides.forEach((sl) => {
-      const p = Math.max(-1, Math.min(1, (sl.offsetTop - st) / H));
+      const raw = (sl.offsetTop - st) / H;
+      if (Math.abs(raw) > 1.5) return; // far off screen: nothing to animate, so no style work while swiping
+      const p = Math.max(-1, Math.min(1, raw));
       sl.style.setProperty('--p', p.toFixed(3)); sl.style.setProperty('--ap', Math.abs(p).toFixed(3));
     });
   };

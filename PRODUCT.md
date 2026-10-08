@@ -19,7 +19,7 @@ Swish analyses a short basketball clip on-device (MediaPipe Pose, WASM) and retu
 Pose analysis runs entirely on the phone: no server, no per-use cost, video never leaves the device or is stored. Every metric teaches (what it is, why it matters, how to fix it) rather than only scoring.
 
 ## Operating Context
-Record (countdown with beeps, 5 s clip) or upload from Photos (trim to 5 s), a quality pre-check with specific messages, on-device analysis with live tracking preview, then a vertical swipe report. Scores are saved per profile in local storage; Progress shows per-metric trends. Clips must be 60 fps or higher.
+Record (countdown with beeps, 5 s clip) or upload from Photos (trim to 5 s), a forgiving quality check (notes and lower confidence rather than rejections), on-device analysis with live tracking preview, then a vertical swipe report. Scores are saved per profile in local storage; Progress shows per-metric trends. 60 fps or higher is best but not required.
 
 ## Capabilities and Constraints
 - Flow: one profile (saved once), a moves carousel (only shooting form is live; jab step, layups and crossover are shown as coming soon), one film screen (placement guide with side/front toggle, then upload or record), trim, pre-check, analysis, a Stories-style report, progress.

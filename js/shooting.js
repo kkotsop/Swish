@@ -7,8 +7,8 @@
 // Metrics that cannot be measured reliably from a view are simply not reported for it.
 import { LM, angleAt, argmax, argmin, clamp, deg, dist, fillGaps, mean, median, smoothSeries } from './mathutil.js';
 
-export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'elbowAngle', 'kneeDip', 'releaseHeight', 'followThrough', 'tempo', 'guideHand'];
-export const FRONT_METRICS = ['elbowAlignment', 'sideDrift', 'releaseHeight', 'tempo', 'guideHand'];
+export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'elbowAngle', 'kneeDip', 'releaseHeight', 'followThrough', 'tempo', 'legArmTiming', 'footStagger', 'guideHand'];
+export const FRONT_METRICS = ['elbowAlignment', 'sideDrift', 'releaseHeight', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
 export const SHOOTING_METRICS = [...new Set([...SIDE_METRICS, ...FRONT_METRICS])];
 export const metricsForView = (view) => (view === 'front' ? FRONT_METRICS : SIDE_METRICS);
 
@@ -50,7 +50,7 @@ export function scoreValue(value, range) {
 
 export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const n = frames.length;
-  if (n < fps) return { ok: false, error: 'too-short' };
+  if (n < Math.round(0.6 * fps)) return { ok: false, error: 'too-short' };
   const ranges = config.moves.shooting.ranges;
   const rate = (sec) => Math.max(1, Math.round(sec * fps));
   // Windows are defined in time (not frames) so 30 fps and 60 fps analysis agree.
@@ -77,7 +77,8 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const sh = S[side + 'Shoulder'], el = S[side + 'Elbow'], wr = S[side + 'Wrist'], ix = S[side + 'Index'];
   const gw = S[guide + 'Wrist'];
   const rises = hand === 'right' ? riseR : riseL;
-  if (Math.max(peakL, peakR) < 0.1 * torso) return { ok: false, error: 'no-shot' };
+  if (Math.max(peakL, peakR) < -0.15 * torso) return { ok: false, error: 'no-shot' }; // the hands never even reach the shoulders
+  let weakShot = Math.max(peakL, peakR) < 0.1 * torso; // forgiving: a doubtful shot is still analysed, just with low confidence
 
   // ---- Shot isolation. The highest wrist point defines the shot; the ball leaves the hand when the wrist
   //      has reached its top upward speed and starts to slow down (ball itself is not tracked).
@@ -101,12 +102,12 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
     // elbow goes from bent to (nearly) straight
     const bentMin = Math.min(...elbowAng.slice(Math.max(0, release - rate(0.9)), release + 1));
     const ext = Math.max(...elbowAng.slice(Math.max(0, release - rate(0.15)), Math.min(n, release + rate(0.1) + 1)));
-    if (!(ext - bentMin >= 25)) return { ok: false, error: 'no-shot' };
+    if (!(ext - bentMin >= 15)) weakShot = true;
   } else {
     // hand travels from around chest height to above the head
     const from = Math.max(0, peak - rate(0.9));
     const travel = Math.max(...wr.slice(from, peak + 1).map((p) => p.y)) - wr[peak].y;
-    if (!(travel >= 0.6 * torso) || !(wr[peak].y < S.nose[peak].y)) return { ok: false, error: 'no-shot' };
+    if (!(travel >= 0.4 * torso) || !(wr[peak].y < S.nose[peak].y)) weakShot = true;
   }
 
   // Facing direction (+1 = facing right in the image): arm reach, nose vs ears and toes vs ankles vote.
@@ -215,6 +216,33 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
     add('sideDrift', sideways, 'shoulders', landing, ['lHip', 'rHip', 'lAnkle', 'rAnkle'], takeoff, landing, { jumped });
   }
 
+  // Stance, measured while standing before the dip. Front: feet apart in shoulder widths. Side: how far apart the feet
+  // are front to back (stagger), in shin lengths; positive = shooting-side foot ahead.
+  const stanceIdx = Array.from({ length: Math.max(0, baseTo - baseFrom + 1) }, (_, k) => baseFrom + k);
+  const stanceNames = ['lAnkle', 'rAnkle', 'lHip', 'rHip'];
+  if (view === 'front') {
+    add('stance', median(stanceIdx.map((i) => Math.abs(S.lAnkle[i].x - S.rAnkle[i].x))) / (shoulderW || 1), 'shoulders', baseTo, stanceNames, baseFrom, baseTo);
+  } else {
+    const stagger = median(stanceIdx.map((i) => (S[side + 'Ankle'][i].x - S[guide + 'Ankle'][i].x) * facing)) / (shin || 1);
+    add('footStagger', Math.abs(stagger), 'shins', baseTo, stanceNames, baseFrom, baseTo, { signed: stagger, note: stagger >= 0 ? 'shooting foot ahead' : 'shooting foot behind' });
+  }
+
+  // Leg-to-arm timing: the gap between the legs finishing their push and the arm finishing its extension.
+  // Smooth shooters overlap the two; a gap means the shot has two separate parts (or the arm fires before the legs).
+  const legEnd = Math.min(n - 1, release + rate(0.3));
+  // Knee angles are squashed when facing the camera, so the front view follows the hips rising back to standing height instead.
+  const legSig = view === 'front' ? hipY : kneeFlex, legRef = view === 'front' ? hipBase : 0;
+  const legStart = legSig[bottom], legDepth = Math.abs(legStart - legRef);
+  let legsDone = view === 'front' ? argmin(hipY, bottom, legEnd) : argmin(kneeFlex, bottom, legEnd);
+  for (let i = bottom; i <= legEnd; i++) { if (Math.abs(legSig[i] - legRef) <= 0.2 * legDepth) { legsDone = i; break; } }
+  const armEnd = Math.min(n - 1, release + rate(0.15));
+  const armPeak = Math.max(...elbowAng.slice(set, armEnd + 1).filter(Number.isFinite));
+  let armDone = argmax(elbowAng, set, armEnd);
+  for (let i = set; i <= armEnd; i++) { if (elbowAng[i] >= armPeak - 6) { armDone = i; break; } }
+  const timing = legsDone >= 0 && armDone >= 0 ? (armDone - legsDone) / fps : NaN;
+  add('legArmTiming', Math.abs(timing), 's', armDone >= 0 ? armDone : release, ['lHip', 'rHip', 'lKnee', 'rKnee', 'lAnkle', 'rAnkle', ...armNames], Math.min(legsDone, armDone), Math.max(legsDone, armDone),
+    { signed: timing, note: timing >= 0 ? 'arm finishes after the legs' : 'arm finishes before the legs' });
+
   // Release height: where the ball leaves the hand (fingertip at the release frame) relative to standing height.
   add('releaseHeight', (ankBase - ix[release].y) / (standingH || 1), 'x height', release, [armNames[2], indexName], release - 2, release + 2);
 
@@ -227,8 +255,9 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   for (let i = set; i <= Math.min(gEnd, n - 1); i++) gd.push(dist(gw[i], wr[i]) / (dist(el[i], wr[i]) || 1));
   add('guideHand', mean(gd), 'forearms', set, [armNames[2], guide === 'r' ? 'rWrist' : 'lWrist'], set, gEnd);
 
+  if (weakShot) for (const id of Object.keys(m)) m[id].confidence = 'low';
   return {
-    ok: true, hand, handAmbiguous, facing, view, widthRatio,
+    ok: true, hand, handAmbiguous, weakShot, facing, view, widthRatio,
     phases: { loadStart, bottom, takeoff, set, release, follow, apex, landing },
     metrics: m,
     metricIds: metricsForView(view),
