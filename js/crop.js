@@ -44,7 +44,7 @@ export function subjectCrop(lms, sw, sh, { maxHeight = 0.5 } = {}) {
   if (seen < 8 || x1 <= x0 || y1 <= y0) return null;
   if (y1 - y0 >= maxHeight) return null;
   const cx = ((x0 + x1) / 2) * sw, cy = ((y0 + y1) / 2) * sh;
-  let pw = (x1 - x0) * sw * 2.8, ph = (y1 - y0) * sh * 1.8; // arms overhead and the jump need room around the standing box
+  let pw = (x1 - x0) * sw * 1.7, ph = (y1 - y0) * sh * 1.8; // room for raised arms, the jump and the floor; any wider and the player is small again inside the model input
   if (pw < ph * 0.6) pw = ph * 0.6; // never a thin strip
   if (pw > ph * 1.6) ph = pw / 1.6;
   pw = Math.min(pw, sw); ph = Math.min(ph, sh);

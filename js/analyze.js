@@ -18,9 +18,9 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
 
   onStatus('Finding you in the frame…');
   const fps = Math.min(config.analysisFps, Math.round(clip.fps || config.analysisFps));
-  const earlyCheck = ({ per, brightness }) => {
+  const earlyCheck = ({ per, brightness, scouted }) => {
     if (brightness < config.quality.minBrightness) return MESSAGES.dark;
-    if (per.every((p) => !p.length)) return MESSAGES.noPerson;
+    if (scouted && per.every((p) => !p.length)) return MESSAGES.noPerson; // only after the zoomed search for a distant player came up empty
     return null;
   };
   // Small stills of every 2nd frame for the replay, and larger ones of every 3rd frame for the key-frame pictures,

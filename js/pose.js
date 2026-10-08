@@ -128,7 +128,35 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   const canvas = document.createElement('canvas'); // what the model sees: the frame, or a zoomed crop of it
   const view = document.createElement('canvas'); // always the full frame, for the live preview and replay stills
   const EARLY = Math.min(n, 15);
-  const S = { per: new Array(n).fill(null), lumas: [], crop: null, checked: false, done: 0, detMs: 0, t0: performance.now() };
+  const S = { per: new Array(n).fill(null), lumas: [], crop: null, checked: false, scouted: false, done: 0, detMs: 0, t0: performance.now() };
+  /**
+   * Nobody was detected in the whole frame: the player may simply be too small for the model (filmed from the stands).
+   * Run the detector on zoomed-in tiles of a few frames; if a person turns up, return a zoom crop around them.
+   */
+  const scout = async () => {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const tile = document.createElement('canvas');
+    const grid = (tw, th, nx, ny) => { const out = []; for (let j = 0; j < ny; j++) for (let k = 0; k < nx; k++) out.push({ x: nx > 1 ? (k * (1 - tw)) / (nx - 1) : 0, y: ny > 1 ? (j * (1 - th)) / (ny - 1) : 0, w: tw, h: th }); return out; };
+    const levels = [grid(0.5, 0.6, 3, 2), grid(0.3, 0.36, 5, 4)]; // coarse tiles first, then finer ones
+    const found = [];
+    await lm.setOptions({ runningMode: 'IMAGE' });
+    try {
+      for (const tiles of levels) {
+        for (const f of [0.5, 0.25, 0.75]) {
+          await seek(video, start + f * duration);
+          for (const c of tiles) {
+            drawFrame(video, tile, 512, c);
+            for (const p of lm.detect(tile).landmarks) { const full = uncropLandmarks(toLm(p), c); if (isPlausibleHuman(full)) found.push(full); }
+          }
+          if (found.length) break;
+        }
+        if (found.length) break;
+      }
+    } finally { await lm.setOptions({ runningMode: 'VIDEO' }); }
+    if (!found.length) return null;
+    found.sort((a, b) => (poseBox(b)?.h || 0) - (poseBox(a)?.h || 0));
+    return subjectCrop([found[0]], vw, vh, { maxHeight: 1 }); // always zoom: it was too small to find at full size
+  };
   const resetTracker = async () => { await lm.setOptions({ runningMode: 'IMAGE' }); await lm.setOptions({ runningMode: 'VIDEO' }); };
   await lm.setOptions({ runningMode: 'VIDEO' });
   video.pause();
@@ -152,13 +180,14 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
     S.per[i] = poses; S.done++;
 
     if (!S.checked && S.done >= EARLY) { // fail fast on an unusable clip, then decide whether to zoom
-      S.checked = true;
       const early = S.per.filter(Boolean);
       const brightness = S.lumas.reduce((a, b) => a + b, 0) / (S.lumas.length || 1);
       if (hooks.earlyCheck) {
-        const msg = hooks.earlyCheck({ per: early, brightness });
+        const msg = hooks.earlyCheck({ per: early, brightness, scouted: S.scouted });
         if (msg) throw Object.assign(new Error(msg), { early: true });
       }
+      if (!S.crop && !early.some((ps) => mainPose(ps)) && !S.scouted) return 'scout'; // nobody at full size: look for a small, distant player
+      S.checked = true;
       if (!S.crop) {
         const c = subjectCrop(early.map(mainPose), video.videoWidth, video.videoHeight);
         if (c) { S.crop = c; return 'restart'; }
@@ -179,7 +208,8 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
     for (let k = 0; k < idxs.length; k++) {
       const next = k + 1 < idxs.length ? () => { seekRun.pending = seek(video, start + idxs[k + 1] / fps); } : null;
       seekRun.pending = null;
-      if (processFrame(idxs[k], next) === 'restart') return 'restart';
+      const r = processFrame(idxs[k], next);
+      if (r !== 'ok') return r;
       if (seekRun.pending) await seekRun.pending; else await new Promise((r) => setTimeout(r));
     }
     return 'ok';
@@ -202,7 +232,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
         if (idx >= n) return finish('ok');
         let r; const p0 = performance.now();
         try { r = processFrame(idx); } catch (e) { return finish('error', e); }
-        if (r === 'restart') return finish('restart');
+        if (r !== 'ok') return finish(r); // 'restart' (zoom crop chosen) or 'scout' (look for a distant player)
         nextI = idx + 1;
         const ms = performance.now() - p0;
         ema = ema ? ema * 0.7 + ms * 0.3 : ms;
@@ -224,7 +254,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
 
   const all = Array.from({ length: n }, (_, i) => i);
   const canPlay = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     S.per.fill(null); S.done = 0; S.detMs = 0; S.t0 = performance.now();
     if (attempt > 0) await resetTracker(); // new crop: forget the previous full-frame tracking
     let status;
@@ -233,6 +263,11 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
       if (r.err) throw r.err;
       status = r.status;
     } else status = await seekRun(all);
+    if (status === 'scout') { // zoomed search for a distant player, then run again (with a crop if one was found)
+      S.scouted = true;
+      S.crop = await scout();
+      continue;
+    }
     if (status === 'restart') continue;
     // complete any slots the playback pass missed
     const missing = all.filter((i) => !S.per[i]);
