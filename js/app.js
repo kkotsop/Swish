@@ -85,7 +85,6 @@ function moveScreen() {
   let current = 0;
   const cards = moves.map((m, i) => h('button', { class: `move${m.available ? '' : ' soon'}${m.photo ? ' photo' : ''}`, 'aria-label': `${m.name}${m.available ? '' : ', coming soon'}`, 'aria-disabled': m.available ? null : 'true',
     onClick: () => { if (m.available) { S.move = m; setTimeout(() => go(filmScreen), 140); } else toast(`${m.name} is coming soon`); } },
-    h('span', { class: `art${m.flip ? ' flip' : ''}` }, icon(m.glyph || 'ball', 64)),
     h('b', {}, m.name), h('small', {}, m.blurb)));
   moves.forEach((m, i) => { if (m.photo) { cards[i].style.setProperty('--photo', `url(${m.available ? m.photo : (m.photoSoon || m.photo)})`); cards[i].style.setProperty('--focus', m.focus || '50% 40%'); } }); // custom properties need setProperty
   const dots = moves.map(() => h('i'));

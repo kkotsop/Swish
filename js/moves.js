@@ -4,7 +4,7 @@ import { COPY } from './coaching.js';
 
 export const MOVES = {
   shooting: {
-    id: 'shooting', photo: 'swish-icons/card-shooting.jpg', focus: '50% 60%', name: 'Shooting form', blurb: 'Film from the side or front', glyph: 'shoot', orientation: 'portrait', available: true,
+    id: 'shooting', photo: 'swish-icons/card-shooting.jpg', focus: '50% 60%', name: 'Shooting form', blurb: 'Film from the side or front', orientation: 'portrait', available: true,
     metrics: SHOOTING_METRICS, copy: COPY.shooting, analyze: analyzeShooting, headline: headlineScore,
     guide: {
       orientation: 'portrait', title: 'Where to film',
@@ -14,8 +14,8 @@ export const MOVES = {
       },
     },
   },
-  jab: { id: 'jab', photo: 'swish-icons/card-jab.jpg', photoSoon: 'swish-icons/card-jab-soon.jpg', focus: '50% 45%', name: 'Jab step', blurb: 'Coming soon', glyph: 'jab', available: false, orientation: 'landscape' },
-  layupLeft: { id: 'layupLeft', photo: 'swish-icons/card-layupLeft.jpg', photoSoon: 'swish-icons/card-layupLeft-soon.jpg', focus: '50% 38%', name: 'Layup, left', blurb: 'Coming soon', glyph: 'layup', available: false },
-  layupRight: { id: 'layupRight', photo: 'swish-icons/card-layupRight.jpg', photoSoon: 'swish-icons/card-layupRight-soon.jpg', focus: '50% 35%', name: 'Layup, right', blurb: 'Coming soon', glyph: 'layup', flip: true, available: false },
-  crossover: { id: 'crossover', photo: 'swish-icons/card-crossover.jpg', photoSoon: 'swish-icons/card-crossover-soon.jpg', focus: '56% 40%', name: 'Crossover', blurb: 'Coming soon', glyph: 'cross', available: false },
+  jab: { id: 'jab', photo: 'swish-icons/card-jab.jpg', photoSoon: 'swish-icons/card-jab-soon.jpg', focus: '50% 45%', name: 'Jab step', blurb: 'Coming soon', available: false, orientation: 'landscape' },
+  layupLeft: { id: 'layupLeft', photo: 'swish-icons/card-layupLeft.jpg', photoSoon: 'swish-icons/card-layupLeft-soon.jpg', focus: '50% 38%', name: 'Layup, left', blurb: 'Coming soon', available: false },
+  layupRight: { id: 'layupRight', photo: 'swish-icons/card-layupRight.jpg', photoSoon: 'swish-icons/card-layupRight-soon.jpg', focus: '50% 35%', name: 'Layup, right', blurb: 'Coming soon', available: false },
+  crossover: { id: 'crossover', photo: 'swish-icons/card-crossover.jpg', photoSoon: 'swish-icons/card-crossover-soon.jpg', focus: '56% 40%', name: 'Crossover', blurb: 'Coming soon', available: false },
 };

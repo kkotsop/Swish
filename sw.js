@@ -1,5 +1,5 @@
 // Service worker: the app works offline after the first visit. Bump VERSION when you add, rename or remove app files.
-const VERSION = 'swish-v28';
+const VERSION = 'swish-v29';
 // The pose model and MediaPipe runtime (~20 MB) live in their own cache that survives version bumps: their paths change
 // whenever their content does, so keeping them is safe, and deleting them on every deploy broke offline analysis.
 const HEAVY = 'swish-heavy-1';
