@@ -97,6 +97,8 @@ input[type=text]:focus-visible { border-color: var(--blue); outline: none; }
 .progress-track { height: 12px; border-radius: 9px; background: var(--s2); overflow: hidden; }
 .progress-bar { height: 100%; width: 100%; background: var(--blue); border-radius: 9px; transform: scaleX(0); transform-origin: left; transition: transform .2s linear; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.throw { display: block; margin: 0 auto; filter: drop-shadow(0 8px 10px rgba(0,0,0,.3)); }
+.throw svg { display: block; overflow: visible; }
 .ball { width: 96px; height: 96px; display: block; filter: drop-shadow(0 8px 10px rgba(0,0,0,.35)); }
 .ball .seams { transform-origin: 50px 50px; animation: spin 2.2s linear infinite; }
 .preview { display: block; align-self: center; max-width: 100%; max-height: 36vh; border-radius: var(--r-lg); background: #000; }
@@ -139,8 +141,8 @@ input[type=text]:focus-visible { border-color: var(--blue); outline: none; }
 .flag { --c: var(--good); display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; min-height: 32px; padding: 0 14px 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--c) 18%, var(--ink)); color: var(--c); font-size: 13px; font-weight: 600; }
 .flag .ico { width: 22px; height: 22px; border-radius: 50%; background: var(--c); color: var(--ink); }
 .flag.borderline { --c: var(--warn); } .flag.needs-work { --c: var(--bad); } .flag.unknown { --c: var(--text-2); }
-.frame-wrap { position: relative; border-radius: var(--r-lg); overflow: hidden; background: #000; width: 100%; }
-.frame-wrap canvas { display: block; width: 100%; height: auto; max-height: 46vh; object-fit: contain; }
+.frame-wrap { position: relative; flex: none; border-radius: var(--r-lg); overflow: hidden; background: #000; width: 100%; } /* flex: none, or a crowded slide squashes the card and clips the bottom of the picture (the knees) */
+.frame-wrap canvas { display: block; width: 100%; height: auto; max-height: 42vh; object-fit: contain; }
 .cap { font-size: 28px; font-weight: 700; line-height: 1.08; letter-spacing: -.03em; text-wrap: balance; }
 .facts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-2); }
 .fact { background: var(--s1); border-radius: var(--r-md); padding: var(--gap-3) var(--gap-4); display: flex; flex-direction: column; gap: 2px; }

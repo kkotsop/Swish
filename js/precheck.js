@@ -11,7 +11,8 @@ export function poseBox(lm) {
 
 /**
  * Is this pose a believable standing/jumping person? Rejects false detections on balls, hoops, shadows etc.
- * Needs good visibility on the core joints, a sensible head-to-feet order and a body that is not tiny.
+ * Needs good visibility on the core joints and a sensible head-to-feet order and proportions. Deliberately independent
+ * of how big the person is in the frame, so a player filmed from the stands still counts.
  */
 export function isPlausibleHuman(lm) {
   const core = [11, 12, 23, 24, 25, 26, 27, 28].map((i) => lm[i]);
@@ -20,7 +21,8 @@ export function isPlausibleHuman(lm) {
   const avgY = (a, b) => (lm[a].y + lm[b].y) / 2;
   const sh = avgY(11, 12), hip = avgY(23, 24), knee = avgY(25, 26), ank = avgY(27, 28);
   if (!(sh < hip && hip < knee && knee < ank + 0.02)) return false; // upright order (feet lowest)
-  return hip - sh > 0.03 && ank - sh > 0.08;
+  const body = ank - sh, torso = (hip - sh) / (body || 1);
+  return body > 0.03 && torso > 0.12 && torso < 0.85; // torso is roughly 0.35 of shoulder-to-ankle height standing, up to ~0.6 deep in a crouch
 }
 
 /**
@@ -54,21 +56,15 @@ export function selectSubject(perFrame, times, cfg) {
 export const MESSAGES = {
   fpsWarn: (fps, rec) => `This clip is ${Math.round(fps)} fps, which is low quality. It will still work, but ${rec} fps or higher gives much more accurate results.`,
   fpsBlock: (fps, min) => `This clip is ${Math.round(fps)} fps; we need at least ${min} fps to track a shot.`,
-  orientation: (want) => `This clip is not ${want}. We'll still try, but ${want} works best.`,
   dark: 'This clip is dark, so some results may be less accurate.',
   noPerson: "We couldn't get a clear view of you. Make sure you're fully in frame and well lit.",
   multiple: 'More than one person is in the shot. We followed the main one.',
-  tooSmall: "You look small in the frame, so some results may be less accurate. Move closer next time.",
+  tooSmall: "You look small in the frame, so some results may be less accurate. Try moving closer, or zoom in, next time.",
   noShot: "We couldn't find a shot in this clip. Record the whole motion: load, jump and release.",
   tooShort: 'This clip is too short to analyse. Record about 5 seconds.',
   weakShot: "We couldn't clearly see the shot, so treat every number here with care.",
 };
 
-/** A clip in the wrong orientation still works; it is only a note. Returns null (fine) or the note. */
-export function checkOrientation(width, height, want) {
-  const isPortrait = height >= width;
-  return (want === 'portrait') === isPortrait ? null : MESSAGES.orientation(want);
-}
 // 5% tolerance: iPhones record "60 fps" as 59.94 and playback-based fps measurement is slightly noisy.
 // Returns null (fine), { level: 'warn', message } (works, but lower quality) or { level: 'block', message } (hopelessly low).
 export function checkFps(fps, cfg) {

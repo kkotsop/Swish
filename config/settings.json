@@ -10,8 +10,8 @@
     "secondPersonSizeRatio": 0.55,
     "secondPersonCentralBand": [0.25, 0.75],
     "secondPersonFrameShare": 0.25,
-    "minSubjectHeight": 0.3,
-    "fatalSubjectHeight": 0.08
+    "minSubjectHeight": 0.1,
+    "fatalSubjectHeight": 0.03
   },
   "llm": {
     "proxyUrl": "",

@@ -24,3 +24,35 @@ export function fitAspect(box, sw, sh, minAspect = 0.8) {
   }
   return { x, y, w, h: hgt };
 }
+
+/**
+ * Zoom crop for the pose model when the player is small in the frame (filmed from the stands).
+ * The model sees the image at a fixed small size, so a distant player gets very few pixels: feeding it a crop
+ * around the player gives it far more detail. `lms` = landmark sets of the tracked player from the first frames.
+ * Returns a normalised { x, y, w, h } or null when the player is big enough that zooming is not worth it.
+ * The crop is generous (room for raised arms, the jump and the floor) and then stays fixed for the whole clip.
+ */
+export function subjectCrop(lms, sw, sh, { maxHeight = 0.5 } = {}) {
+  let x0 = 1, y0 = 1, x1 = 0, y1 = 0, seen = 0;
+  for (const lm of lms) {
+    if (!lm) continue;
+    for (const p of lm) {
+      if (!p || (p.v ?? 1) < 0.3) continue;
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); seen++;
+    }
+  }
+  if (seen < 8 || x1 <= x0 || y1 <= y0) return null;
+  if (y1 - y0 >= maxHeight) return null;
+  const cx = ((x0 + x1) / 2) * sw, cy = ((y0 + y1) / 2) * sh;
+  let pw = (x1 - x0) * sw * 1.7, ph = (y1 - y0) * sh * 1.8; // room for raised arms, the jump and the floor; any wider and the player is small again inside the model input
+  if (pw < ph * 0.6) pw = ph * 0.6; // never a thin strip
+  if (pw > ph * 1.6) ph = pw / 1.6;
+  pw = Math.min(pw, sw); ph = Math.min(ph, sh);
+  const x = Math.max(0, Math.min(sw - pw, cx - pw / 2)), y = Math.max(0, Math.min(sh - ph, cy - ph / 2));
+  return { x: x / sw, y: y / sh, w: pw / sw, h: ph / sh };
+}
+
+/** Map landmarks given in crop coordinates back to the full frame. */
+export function uncropLandmarks(lm, c) {
+  return lm.map((p) => ({ ...p, x: c.x + p.x * c.w, y: c.y + p.y * c.h }));
+}

@@ -61,7 +61,9 @@ export const SHOOTING_COPY = {
     why: 'A snapped wrist puts backspin on the ball for a soft touch off the rim. A stiff wrist gives a flat, bouncy shot.',
     improve: (v, r, res) => res.status === 'good'
       ? `Your fingers snap down to ${fmt(v, 0)}°. Nice finish.`
-      : `Your fingers only reach ${fmt(v, 0)}° below horizontal; aim for ${r.good[0]}°+. Snap your wrist like reaching into the cookie jar and hold the finish.`,
+      : v < 0
+        ? `Your fingers are still pointing up after release; aim for ${r.good[0]}°+ below horizontal. Snap your wrist down like reaching into the cookie jar and hold the finish.`
+        : `Your fingers only reach ${fmt(v, 0)}° below horizontal; aim for ${r.good[0]}°+. Snap your wrist like reaching into the cookie jar and hold the finish.`,
   },
   tempo: {
     name: 'Shot tempo', short: 'Tempo',
