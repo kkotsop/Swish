@@ -124,6 +124,7 @@ const mainPose = (poses) => poses.filter(isPlausibleHuman).sort((a, b) => (poseB
  */
 export async function processClip(video, { start, duration, fps }, cfg, onProgress, hooks = {}) {
   const lm = await loadPose(cfg);
+  const dbg = (...a) => { if (cfg.debug) console.log('[swish]', ...a); }; // set "debug": true in config/settings.json to trace a run
   const n = Math.floor(duration * fps);
   const canvas = document.createElement('canvas'); // what the model sees: the frame, or a zoomed crop of it
   const view = document.createElement('canvas'); // always the full frame, for the live preview and replay stills
@@ -153,9 +154,23 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
         if (found.length) break;
       }
     } finally { await lm.setOptions({ runningMode: 'VIDEO' }); }
+    dbg('scout found', found.length, found[0] && poseBox(found[0]));
     if (!found.length) return null;
     found.sort((a, b) => (poseBox(b)?.h || 0) - (poseBox(a)?.h || 0));
     return subjectCrop([found[0]], vw, vh, { maxHeight: 1 }); // always zoom: it was too small to find at full size
+  };
+  // A video that is not in the page may never present frames (iOS in particular), so analysis plays it from a 2px,
+  // almost transparent element, removed again at the end.
+  const hadParent = !!video.parentNode;
+  if (!hadParent) { Object.assign(video.style, { position: 'fixed', right: '0', bottom: '0', width: '2px', height: '2px', opacity: '0.01', pointerEvents: 'none' }); document.body.appendChild(video); }
+  /** The first inference compiles shaders / allocates buffers (seconds on some phones). Do that on a still frame, before playback starts. */
+  const warmUp = async () => {
+    await seek(video, start);
+    const t0 = performance.now();
+    drawFrame(video, canvas, 512, S.crop);
+    videoStamp += 1000 / fps;
+    lm.detectForVideo(canvas, videoStamp);
+    dbg('warm-up took', Math.round(performance.now() - t0), 'ms');
   };
   const resetTracker = async () => { await lm.setOptions({ runningMode: 'IMAGE' }); await lm.setOptions({ runningMode: 'VIDEO' }); };
   await lm.setOptions({ runningMode: 'VIDEO' });
@@ -186,6 +201,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
         const msg = hooks.earlyCheck({ per: early, brightness, scouted: S.scouted });
         if (msg) throw Object.assign(new Error(msg), { early: true });
       }
+      dbg('early check', { frames: early.length, withPerson: early.filter((ps) => mainPose(ps)).length, anyPose: early.filter((ps) => ps.length).length, crop: S.crop, scouted: S.scouted });
       if (!S.crop && !early.some((ps) => mainPose(ps)) && !S.scouted) return 'scout'; // nobody at full size: look for a small, distant player
       S.checked = true;
       if (!S.crop) {
@@ -219,13 +235,15 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
     let nextI = 0, rate = 0.5, ema = 0, last = performance.now(), finished = false;
     const finish = (status, err) => {
       if (finished) return; finished = true; clearInterval(watchdog);
+      if (status === 'stall') dbg('stall', { t: video.currentTime, paused: video.paused, ended: video.ended, rate: video.playbackRate, readyState: video.readyState, frames: seen });
       video.pause(); try { video.playbackRate = 1; } catch { /* ignore */ }
       resolve({ status, err });
     };
-    const watchdog = setInterval(() => { if (performance.now() - last > 4000) finish('stall'); }, 1000);
+    let seen = 0; // frames received so far: the first one may take a while to arrive, later ones should not
+    const watchdog = setInterval(() => { if (performance.now() - last > (seen ? 3000 : 6000)) finish('stall'); }, 1000);
     const cb = (_now, meta) => {
       if (finished) return;
-      last = performance.now();
+      seen++;
       const mt = meta.mediaTime - start, tNext = nextI / fps;
       if (mt >= tNext - 0.004) { // this presented frame is (the first at or after) the next analysis slot
         const idx = nextI + Math.max(0, Math.floor((mt - tNext + 0.004) * fps)); // slots we were too slow for are skipped
@@ -236,10 +254,12 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
         nextI = idx + 1;
         const ms = performance.now() - p0;
         ema = ema ? ema * 0.7 + ms * 0.3 : ms;
-        const want = Math.max(0.1, Math.min(1, 1000 / fps / (ema * 1.35 + 4))); // slow the video so a slot lasts longer than the model call
+        const want = Math.max(0.1, Math.min(1, 1000 / fps / (ema * 1.35 + 4)));
+        dbg('frame', idx, 'took', Math.round(ms), 'ms, rate', rate.toFixed(2), '->', want.toFixed(2), 't', video.currentTime.toFixed(2)); // slow the video so a slot lasts longer than the model call
         if (Math.abs(want - rate) / rate > 0.2) { rate = want; try { video.playbackRate = rate; } catch { /* ignore */ } }
         if (nextI >= n) return finish('ok');
       }
+      last = performance.now(); // measured from the end of the work: a long model call (the first one warms up) is not a stall
       if (mt > duration + 0.15 || video.ended) return finish('ok');
       video.requestVideoFrameCallback(cb);
     };
@@ -256,32 +276,40 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   const canPlay = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   for (let attempt = 0; attempt < 3; attempt++) {
     S.per.fill(null); S.done = 0; S.detMs = 0; S.t0 = performance.now();
+    dbg('pass', attempt, 'crop', S.crop);
     if (attempt > 0) await resetTracker(); // new crop: forget the previous full-frame tracking
+    if (canPlay) await warmUp();
     let status;
     if (canPlay) {
       const r = await playRun();
       if (r.err) throw r.err;
       status = r.status;
     } else status = await seekRun(all);
+    // complete any slots the playback pass missed (a stalled or partial playback falls back to seeking)
+    if (status === 'ok' || status === 'stall' || status === 'noplay') {
+      const missing = all.filter((i) => !S.per[i]);
+      if (missing.length && missing.length <= Math.max(2, Math.round(n * 0.08))) {
+        for (const i of missing) { // a few gaps: reuse the nearest analysed neighbour
+          let j = i; while (j >= 0 && !S.per[j]) j--; if (j < 0) { j = i; while (j < n && !S.per[j]) j++; }
+          S.per[i] = S.per[j] || [];
+        }
+        status = 'ok';
+      } else if (missing.length) {
+        status = await seekRun(missing); // may itself ask for a zoom crop or a scout
+      } else status = 'ok';
+    }
+    dbg('pass', attempt, 'ended with', status, 'frames done', S.done);
     if (status === 'scout') { // zoomed search for a distant player, then run again (with a crop if one was found)
       S.scouted = true;
       S.crop = await scout();
+      dbg('scout crop', S.crop);
       continue;
     }
-    if (status === 'restart') continue;
-    // complete any slots the playback pass missed
-    const missing = all.filter((i) => !S.per[i]);
-    if (missing.length && missing.length <= Math.max(2, Math.round(n * 0.08))) {
-      for (const i of missing) { // a few gaps: reuse the nearest analysed neighbour
-        let j = i; while (j >= 0 && !S.per[j]) j--; if (j < 0) { j = i; while (j < n && !S.per[j]) j++; }
-        S.per[i] = S.per[j] || [];
-      }
-    } else if (missing.length) {
-      await seekRun(missing);
-    }
+    if (status === 'restart') continue; // a zoom crop was chosen: run again with it
     break;
   }
   video.pause();
+  if (!hadParent) video.remove();
   const times = all.map((i) => i / fps);
   return { per: S.per.map((p) => p || []), times, aspect: video.videoWidth / video.videoHeight, brightness: S.lumas.reduce((a, b) => a + b, 0) / (S.lumas.length || 1), crop: S.crop, modelMs: Math.round(S.detMs / Math.max(1, S.done)) };
 }
