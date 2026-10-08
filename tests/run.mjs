@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { analyzeShooting, headlineScore, scoreValue, SIDE_METRICS, FRONT_METRICS } from '../js/shooting.js';
 import { makeShot, makeFrontShot, ASPECT } from './synth.js';
 import { selectSubject, checkTracking, checkOrientation, checkFps, poseBox } from '../js/precheck.js';
+import { subjectCrop, uncropLandmarks } from '../js/crop.js';
 import { rangeFromValues, rangesFromClips } from '../js/calibrate.js';
 import { templateAdvice, personalisedAdvice, summarize, scoreBand } from '../js/coaching.js';
 import { playerBox, fitAspect } from '../js/crop.js';
@@ -11,6 +12,7 @@ import { project, rubberband } from '../js/motion.js';
 const config = JSON.parse(fs.readFileSync(new URL('../config/settings.json', import.meta.url)));
 const run = (o) => { const s = makeShot(o); return { s, r: analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config }) }; };
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg}: got ${a}, want ${b}±${tol}`);
+const near_ = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
 const queue = [];
 const test = (name, fn) => queue.push([name, fn]);
 
@@ -175,12 +177,27 @@ test('false detections (ball/hoop-like poses) are ignored; tiny subject gets a c
   const flat = Array.from({ length: 33 }, (_, i) => ({ x: 0.5 + (i % 3) * 0.01, y: 0.4 + (i % 2) * 0.01, z: 0, v: 0.9 })); // everything in one spot
   const sub0 = selectSubject(Array.from({ length: 60 }, () => [flat]), Array.from({ length: 60 }, (_, i) => i / 60), config);
   assert.equal(sub0.withPerson, 0);
-  const tiny = Array.from({ length: 60 }, () => [person(0.5, 0.25)]);
+  const tiny = Array.from({ length: 60 }, () => [person(0.5, 0.06)]);
   const sub1 = selectSubject(tiny, tiny.map((_, i) => i / 60), config);
   const c = checkTracking({ subject: sub1, total: 60, brightness: 120 }, config);
   assert.ok(c && (c.code === 'too-small' || c.code === 'no-person'), JSON.stringify(c));
+  const far = Array.from({ length: 60 }, () => [person(0.5, 0.2)]); // filmed from the stands: small but usable
+  assert.equal(checkTracking({ subject: selectSubject(far, far.map((_, i) => i / 60), config), total: 60, brightness: 120 }, config), null);
   const big = Array.from({ length: 60 }, () => [person(0.5, 0.7)]);
   assert.equal(checkTracking({ subject: selectSubject(big, big.map((_, i) => i / 60), config), total: 60, brightness: 120 }, config), null);
+});
+
+test('distant players get a zoom crop, close players do not; landmarks map back', () => {
+  const far = person(0.4, 0.15), near = person(0.5, 0.7);
+  assert.equal(subjectCrop([near, near], 1920, 1080), null);
+  const c = subjectCrop([far, far, far], 1920, 1080);
+  assert.ok(c && c.w < 0.9 && c.h < 0.9, JSON.stringify(c));
+  // the crop contains the whole player
+  for (const p of far) { assert.ok(p.x >= c.x && p.x <= c.x + c.w && p.y >= c.y && p.y <= c.y + c.h); }
+  const back = uncropLandmarks(far.map((p) => ({ ...p, x: (p.x - c.x) / c.w, y: (p.y - c.y) / c.h })), c);
+  near_(back[0].x, far[0].x, 1e-9); near_(back[20].y, far[20].y, 1e-9);
+  const aspect = (c.w * 1920) / (c.h * 1080);
+  assert.ok(aspect >= 0.59 && aspect <= 1.61, `crop aspect ${aspect}`);
 });
 
 test('dark, no-person, orientation, fps messages are specific', () => {
