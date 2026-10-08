@@ -2,7 +2,6 @@
 import { h, buzz } from './ui.js';
 import { drawSkeleton, focusJoint } from './skeleton.js';
 import { icon, STATUS_ICON } from './icons.js';
-import { spring, project, rubberband } from './motion.js';
 import { reducedMotion } from './tokens.js';
 import { scoreBand } from './coaching.js';
 import { playerBox, fitAspect } from './crop.js';
@@ -100,94 +99,19 @@ function replayCard(result) {
   return wrap;
 }
 
-/** Bottom sheet: springs in from the bottom, follows the finger 1:1, and flicks away along the same path it came from. */
-export function showMetricSheet(root, { move, id, result }) {
-  const copy = move.copy[id], m = result.metrics[id], r = result.ranges[id];
-  const opener = document.activeElement;
-  let y = 0, anim = null, drag = null, closing = false, sheetH = 0;
-  const height = () => sheetH || (sheetH = sheet.getBoundingClientRect().height); // measured once: no layout reads per frame
-  const setY = (v) => { // sheet and scrim move together
-    y = v; sheet.style.transform = `translateY(${v}px)`;
-    bg.style.background = `rgba(0,0,0,${(0.6 * Math.max(0, 1 - Math.max(0, v) / (height() || 1))).toFixed(3)})`;
-  };
-  const finish = () => { bg.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus({ preventScroll: true }); };
-  const dismiss = (velocity = 0) => {
-    if (closing) return; closing = true;
-    if (anim) anim.cancel();
-    if (reducedMotion()) return finish();
-    anim = spring({ from: y, to: height(), velocity, response: 0.3, damping: 1, onUpdate: setY, onDone: finish });
-  };
-  const onKey = (e) => {
-    if (e.key === 'Escape') return dismiss();
-    if (e.key !== 'Tab') return; // keep keyboard focus inside the sheet while it is open
-    const f = [...sheet.querySelectorAll('button')];
-    if (!f.length) return;
-    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
-    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
-  };
-
-  const closeBtn = h('button', { class: 'back', onClick: () => dismiss(), 'aria-label': 'Close' }, icon('close'));
-  const zone = h('div', { class: 'zone' }, h('div', { class: 'grab' }), h('div', { class: 'head' }, h('h3', {}, copy.name), closeBtn));
-  const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': copy.name },
-    zone,
-    h('div', { class: 'status-line' }, badge(m.status), h('span', {}, `${m.score}/100`)),
-    h('div', { class: 'facts' }, h('div', { class: 'fact' }, h('span', {}, 'You'), h('b', {}, fmtValue(m) + (m.unit === 'deg' || m.unit === 's' ? '' : unitNote(m)))),
-      h('div', { class: 'fact' }, h('span', {}, 'Target'), h('b', {}, targetText(m, r))),
-      h('span', { class: 'conf-note' }, `${CONF_WORD[m.confidence]} tracking confidence`)),
-    h('h4', {}, 'What it measures'), h('p', {}, copy.what),
-    h('h4', {}, 'Why it matters'), h('p', {}, copy.why),
-    h('h4', {}, 'How to improve'), h('p', {}, result.advice[id]),
-    h('div', { style: { height: '8px' } }),
-    h('button', { class: 'btn alt', onClick: () => dismiss() }, 'Done'));
-  const bg = h('div', { class: 'sheet-bg', onClick: (e) => { if (e.target === bg) dismiss(); } }, sheet);
-
-  // Direct manipulation: track from where the finger grabbed, keep a short history for release velocity.
-  zone.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button') || closing) return;
-    if (anim) anim.cancel(); // grabbing mid-flight interrupts the animation and continues from the live position
-    zone.setPointerCapture(e.pointerId);
-    drag = { y0: e.clientY, start: y, hist: [{ t: e.timeStamp, y: e.clientY }] };
-  });
-  zone.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    let ny = drag.start + (e.clientY - drag.y0);
-    if (ny < 0) ny = -rubberband(-ny, height()); // soft edge pulling up
-    setY(ny);
-    drag.hist.push({ t: e.timeStamp, y: e.clientY });
-    while (drag.hist.length > 2 && e.timeStamp - drag.hist[0].t > 100) drag.hist.shift();
-  });
-  const release = (e) => {
-    if (!drag) return;
-    const hst = drag.hist, a = hst[0], z = hst[hst.length - 1];
-    const v = z.t > a.t ? ((z.y - a.y) / (z.t - a.t)) * 1000 : 0; // px/s, positive = downward
-    drag = null;
-    if (y + project(v) > height() * 0.5) return dismiss(v); // judged by where the flick is heading, not where it let go
-    if (anim) anim.cancel();
-    const flicked = Math.abs(v) > 300; // bounce only when the gesture carried momentum
-    anim = spring({ from: y, to: 0, velocity: v, response: 0.3, damping: flicked && !reducedMotion() ? 0.8 : 1, onUpdate: setY });
-  };
-  zone.addEventListener('pointerup', release);
-  zone.addEventListener('pointercancel', release);
-
-  document.addEventListener('keydown', onKey);
-  root.append(bg);
-  setY(height()); // start below the screen, then spring up
-  if (reducedMotion()) setY(0); else anim = spring({ from: height(), to: 0, response: 0.35, damping: 1, onUpdate: setY });
-  closeBtn.focus({ preventScroll: true }); // a plain focus() scrolls the page to reach the off-screen sheet, which left it half open
-}
-
 /** Build the whole report. actions: { onRetry, onProgress, onHome } */
 export function renderReport({ result, move, profile, actions, saved = true }) {
   const root = h('div', { class: 'stories' });
   const slides = [], marks = [];
   const ids = result.metricIds || move.metrics;
-  const open = (id) => { if (root.querySelector('.sheet-bg')) return; buzz(8); showMetricSheet(root, { move, id, result }); }; // a double tap must not stack two sheets
+  const slideOf = {}; // metric id -> its card, so a chip on the score page can jump to it
+  const jump = (id) => { buzz(8); const sl = slideOf[id]; if (sl) scroller.scrollTo({ top: sl.offsetTop, behavior: reducedMotion() ? 'auto' : 'smooth' }); };
   const band = scoreBand(result.score);
 
   // Slide 1: the score and every metric as a /100 chip.
   const chips = ids.filter((id) => result.metrics[id]).map((id) => {
     const m = result.metrics[id];
-    return h('button', { class: `chip ${m.status}`, onClick: () => open(id), 'aria-label': `${move.copy[id].name}, ${m.status === 'unknown' ? 'not measured' : `${m.score} out of 100`}, ${STATUS_LABEL[m.status]}, ${CONF_WORD[m.confidence]} tracking confidence. Opens details.` },
+    return h('button', { class: `chip ${m.status}`, onClick: () => jump(id), 'aria-label': `${move.copy[id].name}, ${m.status === 'unknown' ? 'not measured' : `${m.score} out of 100`}, ${STATUS_LABEL[m.status]}, ${CONF_WORD[m.confidence]} tracking confidence. Jumps to its card.` },
       confBars(m.confidence),
       h('span', { class: 'dot' }, icon(STATUS_ICON[m.status] || 'dash', 18)),
       h('b', {}, move.copy[id].short), h('span', { class: 'val' }, m.status === 'unknown' ? '—' : String(m.score), h('em', {}, '/100')));
@@ -203,7 +127,7 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
     h('div', { class: 'score-row rise' }, h('div', { class: 'score', role: 'img', 'data-score': String(result.score), 'aria-label': `Score ${result.score} out of 100` }, '0'), h('div', { class: 'score-max' }, '/100')),
     h('div', { class: 'rise' }, badge(band, true)),
     meter);
-  const first = h('section', { class: 'slide', 'aria-label': 'Score' },
+  const first = h('section', { class: 'slide first', 'aria-label': 'Score' },
     h('div', { class: 'pills rise' }, h('span', { class: 'pill' }, VIEW_LABEL[result.view] || 'Side view'),
       h('span', { class: 'pill' }, result.handAmbiguous ? 'Hand unclear' : `${result.hand === 'right' ? 'Right' : 'Left'} hand`),
       h('span', { class: 'who' }, profile.name)),
@@ -226,7 +150,7 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
   const ordered = ids.filter((id) => result.metrics[id]).sort((a, b) => result.metrics[a].score - result.metrics[b].score);
   for (const id of ordered) {
     const m = result.metrics[id], c = move.copy[id], r = result.ranges[id];
-    slides.push(h('section', { class: 'slide metric', 'aria-label': c.name },
+    slides.push(slideOf[id] = h('section', { class: 'slide metric', 'aria-label': c.name },
       h('div', { class: 'rise' }, badge(m.status)),
       result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id }) : null,
       h('div', { class: 'cap rise' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`),
@@ -251,6 +175,7 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
 
   const bars = h('div', { class: 'bars', 'aria-hidden': 'true' }, slides.map(() => h('i'))); // one segment per slide; swipe up/down to move
   const scroller = h('div', { class: 'scroller', tabindex: '0', 'aria-label': 'Report, swipe or scroll for more' }, slides);
+  const swipeHint = h('div', { class: 'swipe-hint', 'aria-hidden': 'true' }, icon('up', 22), h('span', {}, 'Swipe up'));
   const closeX = h('button', { class: 'story-x', onClick: actions.onHome, 'aria-label': 'Close report' }, icon('close', 26));
 
   const countUp = () => {
@@ -293,9 +218,10 @@ export function renderReport({ result, move, profile, actions, saved = true }) {
       sl.style.setProperty('--p', p.toFixed(3)); sl.style.setProperty('--ap', Math.abs(p).toFixed(3));
     });
   };
-  const onScroll = () => { sync(); if (!ticking && !reducedMotion()) { ticking = true; requestAnimationFrame(cascade); } };
+  const onScroll = () => { sync(); swipeHint.style.opacity = String(Math.max(0, 1 - scroller.scrollTop / ((scroller.clientHeight || 1) * 0.3))); // the hint belongs to the score page only
+    if (!ticking && !reducedMotion()) { ticking = true; requestAnimationFrame(cascade); } };
   scroller.addEventListener('scroll', onScroll, { passive: true });
-  root.append(scroller, bars, closeX);
+  root.append(scroller, bars, swipeHint, closeX);
   requestAnimationFrame(sync);
   return root;
 }

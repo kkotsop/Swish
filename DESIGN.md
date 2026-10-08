@@ -5,7 +5,7 @@ How the app looks and moves, so changes stay consistent. Tokens live in `styles.
 ## Look
 
 - **Backdrop:** a pastel court photo (`swish-icons/court.jpg`) behind every screen. It is sharp on home; every other screen shows a pre-blurred copy (`court-soft.jpg`) under a dark scrim, so text stays readable and nothing blurs at runtime.
-- **Surfaces:** frosted glass. Translucent dark tints (`--s1`, `--s2`, `--s3`) with a lit top edge and a hairline. Only the home cards, home top-bar buttons and the details sheet use live `backdrop-filter`. Increase Contrast makes surfaces solid on iPhone.
+- **Surfaces:** frosted glass. Translucent dark tints (`--s1`, `--s2`, `--s3`) with a lit top edge and a hairline. Only the home cards and home top-bar buttons use live `backdrop-filter`. Increase Contrast makes surfaces solid on iPhone.
 - **Unavailable things** are greyed glass (grayscale backdrop, faint text, a "Coming soon" pill), never hidden.
 
 ## Colour
@@ -31,10 +31,10 @@ Radii `--r-sm` 14, `--r-md` 20, `--r-lg` 28, plus pills. Spacing `--gap-1`…`--
 ## Motion
 
 - **Press:** every control sinks to 95% on touch and springs back with a small bounce (`initPress` in `js/motion.js`).
-- **Springs** (`spring()`) use Apple's response/damping model; the details sheet follows the finger, rubber-bands at the top and flicks away using projected momentum.
+- **Springs** (`spring()`) use Apple's response/damping model; the home carousel and press feedback use them.
 - **Report:** slides cascade as you scroll (lower elements trail), media and meter markers pop in with a sampled spring curve, the score counts up.
-- **Reduced motion:** the scroll cascade, pop-ins and the sheet spring become short fades, presses scale without a bounce, the score shows its final value at once and the guide animation stops on its release frame. The carousel's gentle size change follows your finger, so it stays.
+- **Reduced motion:** the scroll cascade, pop-ins and the swipe hint become short fades, presses scale without a bounce, the score shows its final value at once and the guide animation stops on its release frame. The carousel's gentle size change follows your finger, so it stays.
 
 ## Components
 
-Glass card (`.panel`, `.chip`, `.fact`), pill button (`.btn`, `.btn.alt`, `.btn.ghost`), segmented toggle (`.seg`), status label (`.flag`), score meter and target-zone bar (`.meter`, `.meter.zones`), check pills (`.tips`), moves carousel (`.carousel`, `.move`), bottom sheet (`.sheet`), Stories report (`.stories`, `.slide`, `.bars`).
+Glass card (`.panel`, `.chip`, `.fact`), pill button (`.btn`, `.btn.alt`, `.btn.ghost`), segmented toggle (`.seg`), status label (`.flag`), score meter and target-zone bar (`.meter`, `.meter.zones`), check pills (`.tips`), moves carousel (`.carousel`, `.move`), Stories report (`.stories`, `.slide`, `.bars`).
