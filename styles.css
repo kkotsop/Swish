@@ -373,3 +373,7 @@ input[type=text]:focus-visible { border-color: var(--blue); outline: none; }
 
 /* one looping guide: the side and front players take turns */
 .guide-hero > svg { grid-area: 1 / 1; }
+
+/* last page: content centred, the privacy note sits at the very bottom as a footnote */
+.final-main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: var(--gap-3); }
+.slide .footnote { flex: none; margin: 0; text-align: center; font-size: 12px; line-height: 1.35; color: var(--text-2); opacity: .8; }

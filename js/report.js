@@ -107,7 +107,7 @@ function summaryBlock({ result, move, previous }) {
   const work = ids.filter((id) => result.metrics[id].status !== 'good').sort((a, b) => result.metrics[a].score - result.metrics[b].score).slice(0, 2).map(name);
   const word = { good: 'Good form', borderline: 'Getting there', 'needs-work': 'Plenty to work on' }[scoreBand(result.score)];
   const diff = previous == null ? null : result.score - previous;
-  const head = `${word}: ${result.score}/100${diff == null ? '' : diff === 0 ? ', same as last time' : `, ${diff > 0 ? 'up' : 'down'} ${Math.abs(diff)} since last time`}.`;
+  const head = `${word}${diff == null ? '' : diff === 0 ? ', same as last time' : `, ${diff > 0 ? 'up' : 'down'} ${Math.abs(diff)} since last time`}.`; // the score itself is already the title above
   return h('div', { class: 'summary rise' }, h('b', {}, head),
     strong.length ? h('span', { class: 'good' }, icon('check', 18), `Strongest: ${strong.join(' and ')}.`) : null,
     work.length ? h('span', { class: 'work' }, icon('up', 18), `Work on: ${work.join(' and ')}.`) : h('span', { class: 'good' }, icon('check', 18), 'Everything is in the green. Film a few more shots to check it holds.'));
@@ -173,13 +173,14 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
   }
 
   // Final slide: wrap-up actions.
-  slides.push(h('section', { class: 'slide', 'aria-label': 'Saved', style: { justifyContent: 'center' } },
-    h('div', { class: 'cap rise' }, saved ? `Saved. Score ${result.score}.` : `Score ${result.score}. Not saved.`),
-    summaryBlock({ result, move, previous }),
-    h('p', { class: 'rise' }, saved ? 'The video was not stored.' : 'This phone\u2019s storage is full, so this score was not added to your progress. The video was not stored.'),
-    h('button', { class: 'btn rise', onClick: actions.onRetry }, icon('camera', 22), 'Film another'),
-    h('button', { class: 'btn alt rise', onClick: actions.onProgress }, icon('chart', 22), 'See progress'),
-    h('button', { class: 'btn ghost rise', onClick: actions.onHome }, 'Home')));
+  slides.push(h('section', { class: 'slide', 'aria-label': 'Saved' },
+    h('div', { class: 'final-main' },
+      h('div', { class: 'cap rise' }, saved ? `Saved. Score ${result.score}.` : `Score ${result.score}. Not saved.`),
+      summaryBlock({ result, move, previous }),
+      h('button', { class: 'btn rise', onClick: actions.onRetry }, icon('camera', 22), 'Film another'),
+      h('button', { class: 'btn alt rise', onClick: actions.onProgress }, icon('chart', 22), 'See progress'),
+      h('button', { class: 'btn ghost rise', onClick: actions.onHome }, 'Home')),
+    h('p', { class: 'footnote rise' }, saved ? 'The video was not stored.' : 'This phone\u2019s storage is full, so this score was not added to your progress. The video was not stored.')));
 
   // Stagger the entrance of each element on a slide.
   for (const s of slides) {
