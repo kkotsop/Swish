@@ -4,7 +4,9 @@ import { analyzeShooting, headlineScore, scoreValue, SIDE_METRICS, FRONT_METRICS
 import { makeShot, makeFrontShot, ASPECT } from './synth.js';
 import { selectSubject, checkTracking, checkOrientation, checkFps, poseBox } from '../js/precheck.js';
 import { rangeFromValues, rangesFromClips } from '../js/calibrate.js';
-import { templateAdvice, personalisedAdvice, summarize } from '../js/coaching.js';
+import { templateAdvice, personalisedAdvice, summarize, scoreBand } from '../js/coaching.js';
+import { playerBox, fitAspect } from '../js/crop.js';
+import { project, rubberband } from '../js/motion.js';
 
 const config = JSON.parse(fs.readFileSync(new URL('../config/settings.json', import.meta.url)));
 const run = (o) => { const s = makeShot(o); return { s, r: analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config }) }; };
@@ -215,6 +217,32 @@ test('template advice is personalised with the number; LLM failure falls back', 
   assert.deepEqual(out, adv);
   const ok = await personalisedAdvice('shooting', r.metrics, ranges, { llm: { proxyUrl: 'http://x' } }, async () => ({ ok: true, json: async () => ({ advice: { tempo: 'Slow down, champ.' } }) }));
   assert.equal(ok.tempo, 'Slow down, champ.'); assert.equal(ok.kneeDip, adv.kneeDip);
+});
+
+test('overall score bands match the summary wording', () => {
+  assert.equal(scoreBand(70), 'good'); assert.equal(scoreBand(69), 'borderline');
+  assert.equal(scoreBand(50), 'borderline'); assert.equal(scoreBand(49), 'needs-work');
+  assert.match(summarize('shooting', {}, 72).meaning, /Solid|Excellent/);
+  assert.match(summarize('shooting', {}, 45).meaning, /Early/);
+});
+
+test('report crop keeps the whole player, is never a narrow strip and stays inside the frame', () => {
+  // a thin figure standing in the middle of a portrait 540x960 frame
+  const lm = Array.from({ length: 33 }, () => null);
+  [[0, .5, .3], [11, .46, .36], [12, .54, .36], [23, .47, .52], [24, .53, .52], [27, .47, .8], [28, .53, .8], [31, .46, .82], [32, .54, .82]]
+    .forEach(([i, x, y]) => { lm[i] = { x, y, v: 1 }; });
+  const box = playerBox([lm]);
+  assert.ok(box.y < .3 && box.y + box.h > .82, 'head and feet inside the crop');
+  const c = fitAspect(box, 540, 960);
+  assert.ok(c.w / c.h >= 0.8 - 1e-9, `aspect ${c.w / c.h} is at least 4:5`);
+  assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.w <= 540 + 1e-6 && c.y + c.h <= 960 + 1e-6, 'inside the frame');
+  assert.deepEqual(playerBox([null]), { x: 0, y: 0, w: 1, h: 1 }); // nobody tracked: whole frame
+});
+
+test('momentum projection and rubber-band resistance', () => {
+  assert.equal(project(0), 0);
+  assert.ok(project(1000) > 400 && project(-1000) < -400, 'a fast flick travels far, in its own direction');
+  assert.ok(rubberband(100, 400) < 100 && rubberband(400, 400) < rubberband(800, 400), 'resists, but never stops dead');
 });
 
 let passed = 0;

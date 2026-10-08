@@ -1,4 +1,6 @@
 // Tiny DOM helpers.
+import { icon } from './icons.js';
+
 export function h(tag, props = {}, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props || {})) {
@@ -13,7 +15,17 @@ export function h(tag, props = {}, ...kids) {
   return el;
 }
 export const $app = () => document.getElementById('app');
-export function mount(node) { const a = $app(); a.replaceChildren(node); return node; }
+
+/** Swap the screen and move focus to its heading so keyboard and screen-reader users land on the new content. */
+export function mount(node) {
+  const a = $app();
+  a.replaceChildren(node);
+  a.classList.toggle('soft', !node.classList.contains('home')); // the court photo is sharp on home and softened everywhere else
+  const target = node.querySelector('[data-focus], h1, h2') || node;
+  target.setAttribute('tabindex', '-1');
+  target.focus({ preventScroll: true });
+  return node;
+}
 export function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
@@ -21,11 +33,11 @@ export function toast(msg) {
 }
 export const buzz = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch { /* not supported on iOS Safari */ } };
 export function topbar(title, onBack) {
-  return h('div', { class: 'topbar' }, onBack ? h('button', { class: 'back', onClick: onBack, 'aria-label': 'Back' }, '‹') : null, h('h2', { style: { margin: 0 } }, title));
+  return h('header', { class: 'topbar' }, onBack ? h('button', { class: 'back', onClick: onBack, 'aria-label': 'Back' }, icon('back')) : null, h('h2', { 'data-focus': '' }, title));
 }
 export function initials(name) { return (name || '?').trim().slice(0, 1).toUpperCase(); }
 export function avatar(profile, size) {
-  const a = h('div', { class: 'avatar', style: size ? { width: size + 'px', height: size + 'px' } : null });
+  const a = h('div', { class: 'avatar', style: size ? { width: size + 'px', height: size + 'px', fontSize: Math.round(size * 0.42) + 'px' } : null });
   if (profile.photo) a.append(h('img', { src: profile.photo, alt: '' })); else a.textContent = initials(profile.name);
   return a;
 }

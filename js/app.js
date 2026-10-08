@@ -1,5 +1,5 @@
 // Swish app shell: screens and navigation. State lives in `S`; every screen is a function that mounts into #app.
-import { h, mount, toast, topbar, avatar } from './ui.js';
+import { h, mount, toast, topbar, avatar, buzz } from './ui.js';
 import * as store from './store.js';
 import { MOVES } from './moves.js';
 import { guideSvg } from './guide.js';
@@ -10,6 +10,9 @@ import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
 import { lineChart, trend } from './progress.js';
 import { drawSkeleton } from './skeleton.js';
+import { icon, ballSvg } from './icons.js';
+import { initPress } from './motion.js';
+import { token } from './tokens.js';
 
 const S = { config: null, profile: null, move: null, cleanup: null, lastFile: null };
 
@@ -18,94 +21,152 @@ function go(screen, ...args) {
   screen(...args);
 }
 
-// ---------- 1. Profile ----------
+// ---------- 1. Profile (one player, saved once) ----------
 function profileScreen() {
-  const profiles = store.listProfiles();
-  const list = profiles.map((p) => h('button', { class: 'tile', onClick: () => { S.profile = p; store.setLastProfile(p.id); go(moveScreen); } },
-    h('div', { class: 'row' }, avatar(p, 48), h('b', { style: { fontSize: '20px' } }, p.name))));
   let photo = null;
-  const name = h('input', { type: 'text', placeholder: 'Player name', maxlength: 24, 'aria-label': 'Player name' });
-  const preview = h('div', { class: 'avatar' }, '+');
+  const name = h('input', { type: 'text', placeholder: 'Your name', maxlength: 24, 'aria-label': 'Your name', autocomplete: 'off', enterkeyhint: 'done', onKeydown: (e) => { if (e.key === 'Enter') create.click(); } });
+  const preview = h('span', { class: 'ico-slot' }, icon('plus'));
   const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' }, onChange: async (e) => {
     const f = e.target.files[0]; if (!f) return;
     photo = await store.resizePhoto(f);
-    preview.replaceChildren(photo ? h('img', { src: photo, alt: '' }) : '+');
+    preview.replaceChildren(photo ? h('img', { src: photo, alt: '' }) : icon('plus'));
   } });
   const create = h('button', { class: 'btn', onClick: () => {
     const n = name.value.trim();
-    if (!n) return toast('Enter a name first');
+    if (!n) return toast('Enter your name first');
     const p = { id: store.newId(), name: n, photo };
     store.saveProfile(p); S.profile = p; store.setLastProfile(p.id); go(moveScreen);
-  } }, 'Create profile');
+  } }, 'Continue');
   mount(h('div', { class: 'screen' },
-    h('img', { src: 'swish-icons/icon-192.png', alt: '', width: 64, height: 64, style: { borderRadius: '16px', marginBottom: '8px' } }),
-    h('h1', {}, 'Swish'),
-    h('p', {}, 'Your pocket basketball coach. Everything stays on this phone.'),
-    profiles.length ? h('div', { class: 'stack', style: { marginBottom: '18px' } }, h('b', {}, 'Who is shooting?'), list) : null,
-    h('div', { class: 'card stack' },
-      h('b', {}, profiles.length ? 'Add a player' : 'Create your first player'),
-      h('div', { class: 'row' }, h('button', { class: 'avatar', style: { border: 0, color: 'var(--accent)' }, onClick: () => file.click(), 'aria-label': 'Choose photo' }, preview), name),
-      file, create)));
+    h('div', { class: 'brand' }, h('img', { src: 'swish-icons/icon-192.png', alt: '' }), h('b', {}, 'Swish')),
+    h('h1', { 'data-focus': '' }, 'Who\u2019s shooting?'),
+    h('p', {}, 'Everything stays on this phone.'),
+    h('div', { class: 'row' }, h('button', { class: 'avatar add', onClick: () => file.click(), 'aria-label': 'Choose photo' }, preview), name),
+    file, h('div', { class: 'spacer' }), create));
 }
 
 // ---------- 2. Move ----------
+function topRow() {
+  return h('div', { class: 'brand' }, h('img', { src: 'swish-icons/icon-192.png', alt: '' }), h('b', {}, 'Swish'),
+    h('button', { class: 'back push', onClick: () => go(progressScreen, MOVES.shooting), 'aria-label': 'Progress' }, icon('chart', 22)),
+    avatar(S.profile, 40));
+}
+
 function moveScreen() {
-  const tiles = Object.values(MOVES).map((m) => h('button', { class: 'tile', disabled: !m.available, onClick: () => { S.move = m; go(guideScreen); } },
-    h('b', { style: { fontSize: '20px' } }, m.name), h('small', {}, m.blurb)));
-  mount(h('div', { class: 'screen' },
-    topbar('Pick a move', () => go(profileScreen)),
-    h('div', { class: 'row', style: { marginBottom: '14px' } }, avatar(S.profile, 40), h('b', {}, S.profile.name)),
-    h('div', { class: 'grid' }, tiles),
-    h('div', { class: 'spacer' }),
-    h('button', { class: 'btn alt', onClick: () => go(progressScreen, MOVES.shooting) }, 'See progress')));
+  const moves = Object.values(MOVES);
+  let current = 0;
+  const cards = moves.map((m, i) => h('button', { class: `move${m.available ? '' : ' soon'}`, 'aria-label': `${m.name}${m.available ? '' : ', coming soon'}`, 'aria-disabled': m.available ? null : 'true',
+    onClick: () => { if (m.available) { S.move = m; setTimeout(() => go(filmScreen), 140); } else toast(`${m.name} is coming soon`); } },
+    h('span', { class: `art${m.flip ? ' flip' : ''}` }, icon(m.glyph || 'ball', 64)),
+    h('b', {}, m.name), h('small', {}, m.blurb)));
+  const dots = moves.map(() => h('i'));
+  const start = h('button', { class: 'btn' }, 'Start');
+  const sync = () => {
+    const m = moves[current];
+    dots.forEach((d, i) => d.classList.toggle('on', i === current));
+    start.disabled = !m.available;
+    if (m.available) start.replaceChildren(icon('camera', 20), `Start ${m.name.toLowerCase()}`); else start.replaceChildren('Coming soon');
+  };
+  start.addEventListener('click', () => { const m = moves[current]; if (m.available) { S.move = m; setTimeout(() => go(filmScreen), 140); } });
+  const track = h('div', { class: 'carousel', tabindex: '0', 'aria-label': 'Moves, swipe sideways' }, cards);
+  // One scroll handler, at most once per frame: read every card position first, then write (no forced re-layout).
+  // Cards shrink as they leave the centre, like a stack of physical cards, and the centred one becomes current.
+  let queued = false;
+  const depth = () => {
+    queued = false;
+    const mid = track.scrollLeft + track.clientWidth / 2;
+    const dist = cards.map((el) => Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid) / (el.offsetWidth || 1));
+    dist.forEach((d, i) => cards[i].style.setProperty('--d', Math.min(1, d).toFixed(3)));
+    const best = dist.indexOf(Math.min(...dist));
+    if (best !== current) { current = best; sync(); buzz(6); }
+  };
+  track.addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(depth); } }, { passive: true });
+  mount(h('div', { class: 'screen home' },
+    topRow(),
+    h('h1', { 'data-focus': '' }, `Hey ${S.profile.name}.`),
+    h('div', { class: 'carousel-wrap' }, track, h('div', { class: 'dots', 'aria-hidden': 'true' }, dots)),
+    start));
+  sync();
+  requestAnimationFrame(depth);
 }
 
-// ---------- 3. Camera placement guide ----------
-function guideScreen(view = 'side') {
-  const g = S.move.guide, v = g.views[view];
-  const tabs = h('div', { class: 'seg' },
-    h('button', { class: view === 'side' ? 'on' : '', onClick: () => go(guideScreen, 'side') }, 'From the side'),
-    h('button', { class: view === 'front' ? 'on' : '', onClick: () => go(guideScreen, 'front') }, 'From the front'));
-  mount(h('div', { class: 'screen' },
-    topbar(g.title, () => go(moveScreen)),
-    tabs,
-    guideSvg(view),
-    h('p', { style: { margin: '2px 0 0', color: 'var(--text)', fontWeight: 700 } }, v.note),
-    h('ol', { class: 'steps' }, v.steps.map((t) => h('li', {}, t))),
-    h('div', { class: 'spacer' }),
-    h('div', { class: 'stack' }, h('button', { class: 'btn', onClick: () => go(captureScreen) }, 'Got it'),
-      h('button', { class: 'btn ghost', onClick: () => go(captureScreen) }, 'Skip'))));
+// ---------- 3. Film: where to stand, then upload or record, on one screen ----------
+/** `file`: start reading this clip straight away (used by "Try this video again"). */
+function filmScreen(view = 'side', file = null) {
+  const input = h('input', { type: 'file', accept: 'video/*', style: { display: 'none' } });
+  const stage = h('div', { class: 'stage' }, guideSvg(view));
+  const tipsEl = tips();
+  const loader = h('div', { class: 'loader', hidden: true, role: 'status' }, h('div', { class: 'bar' }, h('i')), h('p', {}, 'Reading your video…'));
+  const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Filming angle' },
+    h('button', { class: view === 'side' ? 'on' : '', 'aria-pressed': String(view === 'side'), onClick: () => go(filmScreen, 'side') }, 'From the side'),
+    h('button', { class: view === 'front' ? 'on' : '', 'aria-pressed': String(view === 'front'), onClick: () => go(filmScreen, 'front') }, 'From the front'));
+  const pick = h('button', { class: 'btn', onClick: () => { preloadPose(S.config); input.click(); } }, icon('upload', 20), 'Choose a video');
+  const actions = h('div', { class: 'stack' }, pick,
+    h('button', { class: 'btn alt', onClick: () => go(recordScreen) }, icon('camera', 20), 'Record'),
+    S.lastFile ? h('button', { class: 'btn ghost', onClick: () => begin(S.lastFile) }, icon('retry', 18), 'Use the last video again') : null, input);
+  // Once a clip is picked, a still of its first frame replaces the animation and the loader sits under it. The video itself
+  // stays off-screen: frame-rate measurement plays and rewinds it, which showed up as flicker.
+  const begin = (file) => {
+    actions.classList.add('busy'); tabs.classList.add('busy');
+    tipsEl.hidden = true; loader.hidden = false;
+    preloadPose(S.config);
+    return startUpload(file, (v) => {
+      const poster = () => {
+        if (!v.videoWidth || !stage.isConnected) return;
+        try {
+          const s = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+          const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          stage.replaceChildren(c); stage.classList.add('has-video');
+        } catch { /* keep the animation if the frame cannot be read */ }
+      };
+      v.addEventListener('loadeddata', poster, { once: true });
+      v.addEventListener('seeked', poster, { once: true }); // the fps check rewinds to the start: a frame iOS has surely painted
+    }, () => stage.isConnected);
+  };
+  input.addEventListener('change', () => {
+    const f = input.files[0];
+    input.value = ''; // so picking the same video again still fires a change event
+    if (f) begin(f);
+  });
+  mount(h('div', { class: 'screen' }, topbar(S.move.name, () => go(moveScreen)), tabs, stage, h('div', { class: 'slot' }, tipsEl, loader), actions));
+  if (file) begin(file);
+  else setTimeout(() => preloadPose(S.config), 2500); // warm the pose model once the screen has settled, not while you are tapping in
 }
 
-// ---------- 4. Capture: record or upload ----------
-function captureScreen(tab = 'upload') {
+// ---------- 4. Record ----------
+function recordScreen() {
   const body = h('div', { style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '12px' } });
-  const seg = h('div', { class: 'seg' },
-    h('button', { class: tab === 'upload' ? 'on' : '', onClick: () => go(captureScreen, 'upload') }, 'Upload'),
-    h('button', { class: tab === 'record' ? 'on' : '', onClick: () => go(captureScreen, 'record') }, 'Record'));
-  mount(h('div', { class: 'screen' }, topbar(S.move.name, () => go(guideScreen)), seg, body));
-  (tab === 'record' ? recordPane : uploadPane)(body);
+  mount(h('div', { class: 'screen' }, topbar('Record a shot', () => go(filmScreen)), body));
+  recordPane(body);
 }
+const captureScreen = (tab = 'upload') => (tab === 'record' ? recordScreen() : filmScreen());
+
+/** The three filming checks shown on the film and record screens. */
+const tips = () => h('div', { class: 'tips' }, ['60 fps+', 'Phone upright, 3 m', 'Full body in frame'].map((t) => h('span', { class: 'pill' }, icon('check', 14), t)));
 
 /** The camera (and its permission prompt) is only started once the user taps "Open camera". */
 function recordPane(body) {
-  const intro = h('div', { class: 'card stack', style: { marginTop: '8px' } },
-    h('h2', {}, 'Record a shot'),
-    p5('Swish will ask to use your camera when you tap the button below. Nothing is recorded until you press Record.'),
-    h('button', { class: 'btn', onClick: () => { intro.remove(); startRecorder(body); } }, 'Open camera'));
+  const intro = h('div', { class: 'tile-wrap' },
+    h('div', { class: 'drop' },
+      h('span', { class: 'drop-ico' }, icon('camera', 34)),
+      h('h2', {}, 'Record a shot'),
+      p5('Camera opens when you tap. Nothing records until you press Record.'),
+      h('button', { class: 'btn', onClick: () => { intro.remove(); startRecorder(body); } }, icon('camera', 20), 'Open camera')),
+    tips());
   body.append(intro);
 }
 
 async function startRecorder(body) {
-  let stream = null, busy = false, countdown = 5;
+  let stream = null, busy = false, countdown = 5, gone = false; // `gone`: the user left this screen
   const video = h('video', { autoplay: true, muted: true, playsinline: true });
   video.muted = true;
   const count = h('div', { class: 'count' });
-  const badge = h('div', { class: 'rec', style: { display: 'none' } }, '● REC');
+  const badge = h('div', { class: 'rec', style: { display: 'none' } }, 'REC');
   const overlay = h('div', { class: 'overlay-msg', style: { display: 'none' } });
   const cam = h('div', { class: 'cam' }, video, h('div', { class: 'frame-guide' }), count, badge, overlay);
   const opts = [3, 5, 10].map((n) => h('button', { class: n === countdown ? 'on' : '', onClick: (e) => { countdown = n; [...e.target.parentNode.children].forEach((b) => b.classList.toggle('on', b === e.target)); } }, `${n}s`));
-  const recBtn = h('button', { class: 'btn', disabled: true }, 'Record');
+  const recBtn = h('button', { class: 'btn', disabled: true }, icon('record', 22), 'Record');
   body.append(cam, h('div', { class: 'row' }, h('b', {}, 'Countdown'), h('div', { class: 'seg spacer' }, opts)), recBtn);
 
   const want = S.move.orientation;
@@ -116,14 +177,16 @@ async function startRecorder(body) {
     recBtn.disabled = wrong || busy || !stream;
   };
   const offOri = onOrientationChange(syncOrientation);
-  S.cleanup = () => { offOri(); stopStream(stream); };
+  S.cleanup = () => { gone = true; offOri(); stopStream(stream); };
 
   try {
     stream = await openCamera(want);
+    if (gone) { stopStream(stream); return; } // left before the camera opened
     video.srcObject = stream;
     await video.play().catch(() => {});
     syncOrientation();
   } catch (e) {
+    if (gone) return;
     overlay.style.display = 'grid'; overlay.textContent = e.message;
   }
 
@@ -132,7 +195,8 @@ async function startRecorder(body) {
     busy = true; recBtn.disabled = true; unlockAudio();
     const track = stream.getVideoTracks()[0];
     const settings = track.getSettings ? track.getSettings() : {};
-    for (let n = countdown; n > 0; n--) { count.textContent = String(n); beep(660, 140); await new Promise((r) => setTimeout(r, 1000)); }
+    for (let n = countdown; n > 0; n--) { if (gone) return; count.textContent = String(n); beep(660, 140); await new Promise((r) => setTimeout(r, 1000)); }
+    if (gone) return;
     count.textContent = '';
     try {
       const secs = S.config.clipSeconds;
@@ -141,8 +205,10 @@ async function startRecorder(body) {
       S.lastFile = null;
       const v = makeVideo(blob);
       await whenReady(v);
+      if (gone) return;
       go(analyzeScreen, { video: v, start: 0, duration: Math.min(secs, v.duration || secs), fps: settings.frameRate || null, source: 'record' });
     } catch (e) {
+      if (gone) return; // stopping the camera on the way out is not an error
       busy = false; recBtn.disabled = false; count.textContent = '';
       go(errorScreen, e.message);
     }
@@ -150,34 +216,21 @@ async function startRecorder(body) {
 }
 
 /** Read an uploaded file and route it to trim or analysis. Used by the picker and by "try this clip again". */
-async function startUpload(file) {
+async function startUpload(file, onVideo, stillHere = () => true) {
   S.lastFile = file;
+  let v = null;
   try {
-    const v = makeVideo(file);
+    v = makeVideo(file);
+    if (onVideo) onVideo(v);
     await whenReady(v);
     const fps = await measureFps(v);
+    if (!stillHere()) return URL.revokeObjectURL(v.src); // the user backed out while the clip was being read
     const fpsCheck = fps ? checkFps(fps, S.config) : null;
     const msg = (fpsCheck && fpsCheck.level === 'block' && fpsCheck.message) || checkOrientation(v.videoWidth, v.videoHeight, S.move.orientation);
-    if (msg) return go(errorScreen, msg);
+    if (msg) { URL.revokeObjectURL(v.src); return go(errorScreen, msg); }
     const clip = { video: v, fps, source: 'upload', total: v.duration };
     if (v.duration > S.config.clipSeconds + 0.3) go(trimScreen, clip); else go(analyzeScreen, { ...clip, start: 0, duration: v.duration });
-  } catch (e) { go(errorScreen, e.message || 'Could not read this video.'); }
-}
-
-function uploadPane(body) {
-  const input = h('input', { type: 'file', accept: 'video/*', style: { display: 'none' } });
-  const status = h('p', {}, 'Pick a video of your shot from your photo library.');
-  const pick = h('button', { class: 'btn', onClick: () => input.click() }, 'Choose a video');
-  input.addEventListener('change', async () => {
-    const f = input.files[0];
-    input.value = ''; // so picking the same video again still fires a change event
-    if (!f) return;
-    pick.disabled = true; status.textContent = 'Reading your video…';
-    await startUpload(f);
-  });
-  body.append(h('div', { class: 'card stack', style: { marginTop: '8px' } }, h('h2', {}, 'Upload a video'), status, pick, input,
-    S.lastFile ? h('button', { class: 'btn alt', onClick: () => { pick.disabled = true; status.textContent = 'Reading your video…'; startUpload(S.lastFile); } }, 'Use the last video again') : null,
-  ));
+  } catch (e) { if (v) URL.revokeObjectURL(v.src); if (stillHere()) go(errorScreen, e.message || 'Could not read this video.'); }
 }
 
 // ---------- 4b. Trim ----------
@@ -195,33 +248,37 @@ function trimScreen(clip) {
   };
   ia.addEventListener('input', () => { a = +ia.value; if (b - a > MAXW) b = a + MAXW; if (b - a < MINW) b = Math.min(dur, a + MINW), a = Math.max(0, b - MINW); ia.value = a; ib.value = b; v.currentTime = a; paint(); });
   ib.addEventListener('input', () => { b = +ib.value; if (b - a > MAXW) a = b - MAXW; if (b - a < MINW) a = Math.max(0, b - MINW), b = Math.min(dur, a + MINW); ia.value = a; ib.value = b; v.currentTime = b; paint(); });
-  const play = h('button', { class: 'btn alt', onClick: () => { v.currentTime = a; v.play(); const t = setInterval(() => { if (v.currentTime >= b || v.paused) { v.pause(); clearInterval(t); } }, 50); } }, 'Preview');
+  let timer = 0;
+  const stopPreview = () => { clearInterval(timer); timer = 0; };
+  let toAnalysis = false;
+  S.cleanup = () => { stopPreview(); v.pause(); if (!toAnalysis) URL.revokeObjectURL(v.src); }; // analysis releases it when done
+  const play = h('button', { class: 'btn alt', onClick: () => { stopPreview(); v.currentTime = a; v.play().catch(() => {}); timer = setInterval(() => { if (v.currentTime >= b || v.paused) { v.pause(); stopPreview(); } }, 50); } }, icon('play', 20), 'Preview');
   paint(); v.currentTime = 0;
   mount(h('div', { class: 'screen trim' }, topbar('Pick the shot', () => go(captureScreen, 'upload')),
     p5(`Choose up to ${MAXW} seconds that include the whole shot: load, jump and release.`), v,
     h('div', { class: 'range' }, h('div', { class: 'track' }), win, ia, ib), h('div', { style: { textAlign: 'center' } }, label),
     h('div', { class: 'spacer' }), h('div', { class: 'stack' }, play,
-      h('button', { class: 'btn', onClick: () => go(analyzeScreen, { ...clip, start: a, duration: b - a }) }, 'Analyse'))));
+      h('button', { class: 'btn', onClick: () => { toAnalysis = true; go(analyzeScreen, { ...clip, start: a, duration: b - a }); } }, 'Analyse'))));
 }
 const p5 = (t) => h('p', {}, t);
 
 // ---------- 6. Analysis ----------
 async function analyzeScreen(clip) {
   const bar = h('div', { class: 'progress-bar' });
-  const status = h('b', { style: { fontSize: '20px' } }, 'Starting…');
-  const detail = h('p', { style: { margin: 0 } }, ' ');
-  const preview = h('canvas', { class: 'preview', style: { display: 'none' } });
-  mount(h('div', { class: 'screen', style: { justifyContent: 'center', gap: '16px' } },
-    h('div', { class: 'big-num' }, '🏀'), h('h1', {}, 'Analysing'), status, h('div', { class: 'progress-track' }, bar), detail, preview,
-    (() => { const w = clip.fps && checkFps(clip.fps, S.config); return w ? h('div', { class: 'card', style: { borderLeft: '6px solid var(--warn)' } }, h('b', {}, 'Heads up: '), w.message) : null; })(),
-    p5('This takes about 5–15 seconds. Your video stays on this phone and is deleted when we finish.')));
+  const status = h('h2', { 'data-focus': '' }, 'Analysing');
+  const detail = h('p', {}, 'Starting…');
+  const preview = h('canvas', { class: 'preview', style: { display: 'none' }, role: 'img', 'aria-label': 'Live view of the player being tracked' });
+  const warn = clip.fps && checkFps(clip.fps, S.config);
+  mount(h('div', { class: 'screen', style: { alignItems: 'center', textAlign: 'center' } },
+    h('div', { class: 'spacer' }), ballSvg(), status, h('div', { class: 'progress-track', style: { width: '100%' }, role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail, preview, h('div', { class: 'spacer' }),
+    warn ? h('div', { class: 'tiny-note' }, icon('alert', 14), warn.message) : null));
   try {
-    const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { status.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
+    const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
       preview.style.display = ''; preview.width = src.width; preview.height = src.height;
       const ctx = preview.getContext('2d'); ctx.drawImage(src, 0, 0);
       if (lm) drawSkeleton(ctx, lm, { w: src.width, h: src.height, hand: null });
     },
-    onProgress: (p, info) => { bar.style.width = `${Math.round(p * 100)}%`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · about ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
+    onProgress: (p, info) => { bar.style.transform = `scaleX(${Math.max(0, Math.min(1, p))})`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
     if (!out.ok) return go(errorScreen, out.message);
     go(reportScreen, out.result);
   } catch (e) {
@@ -236,9 +293,9 @@ async function analyzeScreen(clip) {
 function errorScreen(message) {
   mount(h('div', { class: 'screen', style: { justifyContent: 'center', gap: '14px' } },
     h('h1', {}, 'Hold up'),
-    h('div', { class: 'card err' }, h('b', { style: { fontSize: '19px', lineHeight: 1.35 } }, message)),
+    h('div', { class: 'panel err' }, h('b', { style: { fontSize: '17px', lineHeight: 1.35 } }, message)),
     h('div', { class: 'stack' },
-      S.lastFile ? h('button', { class: 'btn', onClick: () => startUpload(S.lastFile) }, 'Try this video again') : null,
+      S.lastFile ? h('button', { class: 'btn', onClick: () => go(filmScreen, 'side', S.lastFile) }, icon('retry', 22), 'Try this video again') : null,
       h('button', { class: S.lastFile ? 'btn alt' : 'btn', onClick: () => go(captureScreen, 'upload') }, 'Choose another video'),
       h('button', { class: 'btn alt', onClick: () => go(captureScreen, 'record') }, 'Record a new one'),
       h('button', { class: 'btn ghost', onClick: () => go(moveScreen) }, 'Home'))));
@@ -246,41 +303,49 @@ function errorScreen(message) {
 
 // ---------- 7 + 8. Report (+ save) ----------
 function reportScreen(result) {
-  store.addSession({
+  const saved = store.addSession({
     id: store.newId(), ts: result.ts, profileId: S.profile.id, move: result.move, hand: result.hand, score: result.score,
     metrics: Object.fromEntries(Object.entries(result.metrics).map(([id, m]) => [id, { value: m.value, score: m.score, status: m.status }])),
-  }) || toast('Could not save (storage full?)');
-  mount(renderReport({ result, move: S.move, profile: S.profile, actions: {
+  });
+  if (!saved) toast('Could not save (storage full?)');
+  mount(renderReport({ result, move: S.move, profile: S.profile, saved, actions: {
     onRetry: () => go(captureScreen, 'upload'), onProgress: () => go(progressScreen, S.move), onHome: () => go(moveScreen) } }));
 }
 
 // ---------- 10. Progress ----------
+function deltaBadge(dt, suffix = '') {
+  if (dt == null) return h('span', {});
+  const up = dt > 0, down = dt < 0;
+  return h('span', { class: `delta ${up ? 'up' : down ? 'down' : ''}` }, up ? icon('up', 16) : down ? icon('down', 16) : icon('dash', 16), `${up ? '+' : down ? '\u2212' : ''}${Math.abs(dt)}${suffix}`);
+}
+
 function progressScreen(move) {
   const sessions = store.sessionsFor(S.profile.id, move.id);
   const overall = sessions.map((s) => ({ ts: s.ts, v: s.score }));
   const d = trend(overall);
-  const cards = move.metrics.filter((id) => sessions.some((s) => s.metrics[id])).map((id) => {
+  const rows = move.metrics.filter((id) => sessions.some((s) => s.metrics[id])).map((id) => {
     const pts = sessions.filter((s) => s.metrics[id]).map((s) => ({ ts: s.ts, v: s.metrics[id].score }));
-    const dt = trend(pts);
-    return h('div', { class: 'card' },
-      h('div', { class: 'mini' }, h('b', {}, move.copy[id].name),
-        h('span', { class: `delta ${dt > 0 ? 'up' : dt < 0 ? 'down' : ''}` }, dt == null ? '' : `${dt > 0 ? '▲' : dt < 0 ? '▼' : '='} ${Math.abs(dt)}`)),
-      lineChart(pts, { height: 70 }));
+    return h('div', { class: 'metric-row' },
+      h('div', { class: 'mini' }, h('b', {}, move.copy[id].name), deltaBadge(trend(pts))),
+      lineChart(pts, { height: 70, color: token('--good'), label: false }));
   });
   mount(h('div', { class: 'screen' }, topbar(`${move.name} progress`, () => go(moveScreen)),
     sessions.length ? [
-      h('div', { class: 'card' }, h('div', { class: 'mini' }, h('b', {}, 'Overall score'),
-        h('span', { class: `delta ${d > 0 ? 'up' : d < 0 ? 'down' : ''}` }, d == null ? `${sessions.length} session` : `${d > 0 ? '▲' : d < 0 ? '▼' : '='} ${Math.abs(d)} since last`)),
-        lineChart(overall, { height: 140 })),
-      h('div', { class: 'stack', style: { marginTop: '12px' } }, cards)]
-      : [h('div', { class: 'card' }, h('h2', {}, 'No sessions yet'), p5(`Record your first ${move.name.toLowerCase()} clip to start tracking.`), h('button', { class: 'btn', onClick: () => go(guideScreen) }, 'Record now'))]));
+      h('div', { class: 'hero-stat' },
+        h('div', { class: 'lbl' }, 'Overall score'), h('div', { class: 'big' }, String(overall[overall.length - 1].v)),
+        d == null ? h('span', { class: 'lbl' }, `${sessions.length} session`) : h('span', { class: 'delta' }, d > 0 ? icon('up', 16) : d < 0 ? icon('down', 16) : icon('dash', 16), `${d > 0 ? '+' : d < 0 ? '\u2212' : ''}${Math.abs(d)} since last`),
+        lineChart(overall, { height: 120, color: token('--pink') })),
+      h('div', { class: 'stack' }, rows)]
+      : [h('div', { class: 'panel stack' }, h('h2', {}, 'No sessions yet'), p5(`Record your first ${move.name.toLowerCase()} clip to start tracking.`), h('button', { class: 'btn', onClick: () => { S.move = move; go(filmScreen); } }, icon('camera', 22), 'Record now'))]));
 }
 
 // ---------- boot ----------
+document.addEventListener('touchstart', () => {}, { passive: true }); // lets iOS Safari react the instant a finger lands
+initPress();
+window.__swishBooted = true; // index.html shows a reload prompt if the app code never gets this far
 (async function boot() {
   try { S.config = await store.loadConfig(); } catch { mount(h('div', { class: 'screen' }, h('h1', {}, 'Offline'), p5('Could not load settings. Open Swish once with a connection.'))); return; }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-  setTimeout(() => preloadPose(S.config), 1500); // warm up pose model while the user picks a profile/move
-  const last = store.listProfiles().find((p) => p.id === store.lastProfileId());
-  if (last) { S.profile = last; moveScreen(); } else profileScreen();
+  const me = store.listProfiles().find((p) => p.id === store.lastProfileId()) || store.listProfiles()[0];
+  if (me) { S.profile = me; moveScreen(); } else profileScreen();
 })();

@@ -40,11 +40,26 @@ export function makeVideo(blobOrUrl) {
   v.src = typeof blobOrUrl === 'string' ? blobOrUrl : URL.createObjectURL(blobOrUrl);
   return v;
 }
-export function whenReady(video) {
+/**
+ * Resolve once the first frame is decoded. iPhone Safari may not decode anything for a video that is not on screen
+ * until it is played, which made picking a clip feel stuck: after a short wait we nudge it with a muted play/pause.
+ */
+export function whenReady(video, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     if (video.readyState >= 2 && isFinite(video.duration)) return resolve();
-    video.addEventListener('loadeddata', () => resolve(), { once: true });
-    video.addEventListener('error', () => reject(new Error('Could not read this video.')), { once: true });
+    let done = false, nudged = false;
+    const finish = (fn) => {
+      if (done) return; done = true;
+      clearTimeout(kick); clearTimeout(limit);
+      if (nudged) video.pause(); // the frame is decoded: stop the nudge playback
+      video.removeEventListener('loadeddata', ok); video.removeEventListener('canplay', ok); video.removeEventListener('error', bad);
+      fn();
+    };
+    const ok = () => { if (video.readyState >= 2) finish(resolve); };
+    const bad = () => finish(() => reject(new Error('Could not read this video.')));
+    video.addEventListener('loadeddata', ok); video.addEventListener('canplay', ok); video.addEventListener('error', bad);
+    const kick = setTimeout(() => { if (done) return; nudged = true; video.play().then(() => { if (done) video.pause(); }).catch(() => {}); }, 700);
+    const limit = setTimeout(() => finish(() => reject(new Error('This video is taking too long to open. Try a shorter clip, or record one in Swish.'))), timeoutMs);
     video.load();
   });
 }
@@ -103,6 +118,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   const per = [], times = [], lumas = [];
   const EARLY = Math.min(n - 1, 14);
   const t0 = performance.now();
+  video.pause(); // frames are stepped by seeking; a playing video would drift past the requested time
   await seek(video, start);
   for (let i = 0; i < n; i++) {
     const ctx = drawFrame(video, canvas, 512);
@@ -130,11 +146,11 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   return { per, times, aspect: video.videoWidth / video.videoHeight, brightness: lumas.reduce((a, b) => a + b, 0) / lumas.length };
 }
 
-/** Grab a still (JPEG data URL, max 540px wide) at an analysis time offset. */
+/** Grab a still (JPEG data URL, max 960px wide) at an analysis time offset; the report crops it to the player. */
 export async function grabFrame(video, t) {
   await seek(video, t);
   const canvas = document.createElement('canvas');
-  const s = Math.min(1, 540 / video.videoWidth);
+  const s = Math.min(1, 960 / video.videoWidth);
   canvas.width = Math.round(video.videoWidth * s); canvas.height = Math.round(video.videoHeight * s);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', 0.85);

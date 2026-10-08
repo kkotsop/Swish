@@ -28,9 +28,9 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
   const small = document.createElement('canvas');
   const replayFrames = [];
   const onSample = (canvas, i) => {
-    small.width = 240; small.height = Math.round((240 * canvas.height) / canvas.width);
+    small.width = Math.min(420, canvas.width); small.height = Math.round((small.width * canvas.height) / canvas.width);
     small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
-    replayFrames.push({ i, src: small.toDataURL('image/jpeg', 0.55) });
+    replayFrames.push({ i, src: small.toDataURL('image/jpeg', 0.72) });
   };
   let pass;
   try {
