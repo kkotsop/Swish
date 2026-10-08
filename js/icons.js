@@ -50,3 +50,32 @@ export function ballSvg() {
   </svg>`;
   return w;
 }
+
+/** Loading animation: a basketball is thrown in an arc, swishes through the net, and it repeats. */
+export function throwSvg() {
+  const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const DUR = '2.4s';
+  const KT = '0;.62;.82;1';
+  const motion = still ? '' : `<animateMotion dur="${DUR}" repeatCount="indefinite" path="M26 128 Q104 -46 178 74 L178 112" keyPoints="0;.7;1;1" keyTimes="${KT}" calcMode="linear"/>
+      <animate attributeName="opacity" values="1;1;1;0;0" keyTimes="0;.6;.82;.93;1" dur="${DUR}" repeatCount="indefinite"/>`;
+  const spin = still ? '' : `<animateTransform attributeName="transform" type="rotate" values="0;540" dur="${DUR}" repeatCount="indefinite"/>`;
+  const swish = still ? '' : `<animateTransform attributeName="transform" type="scale" values="1 1;1 1;1.08 1.22;.97 .92;1 1;1 1" keyTimes="0;.6;.7;.78;.9;1" dur="${DUR}" repeatCount="indefinite"/>`;
+  const w = document.createElement('span');
+  w.setAttribute('aria-hidden', 'true');
+  w.className = 'throw';
+  w.innerHTML = `<svg viewBox="0 0 240 150" width="220" height="138">
+    <ellipse cx="120" cy="143" rx="92" ry="5" fill="#000" opacity=".28"/>
+    <rect x="203" y="14" width="8" height="66" rx="3" fill="#fff" opacity=".85"/>
+    <rect x="199" y="30" width="4" height="48" rx="2" fill="#fff" opacity=".5"/>
+    <g transform="translate(0 76)"><g>${swish}<g transform="translate(0 -76)" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".92">
+      <path d="M158 77 L166 112 M170 78 L172 113 M182 78 L184 113 M194 77 L190 112 M158 77 L194 77"/>
+      <path d="M161 92 L193 92 M164 104 L190 104 M158 77 L172 113 M170 77 L184 113 M182 77 L190 112 M170 77 L158 77 M182 77 L166 112 M194 77 L172 113"/>
+    </g></g></g>
+    <ellipse cx="176" cy="76" rx="20" ry="5.5" fill="none" stroke="#ff7b66" stroke-width="3.4"/>
+    <g>${motion}<g>${spin}
+      <circle r="11.5" fill="#c4622a"/>
+      <g fill="none" stroke="#231208" stroke-width="1.5" stroke-linecap="round"><path d="M0 -11.5 V11.5 M-11.5 0 H11.5"/><path d="M-7 -9 C-3 -4 -3 4 -7 9 M7 -9 C3 -4 3 4 7 9"/></g>
+    </g></g>
+  </svg>`;
+  return w;
+}

@@ -3,14 +3,14 @@ import { h, mount, toast, topbar, avatar, buzz } from './ui.js';
 import * as store from './store.js';
 import { MOVES } from './moves.js';
 import { guideSvg } from './guide.js';
-import { beep, onOrientationChange, openCamera, orientationNow, recordFor, stopStream, unlockAudio } from './capture.js';
+import { beep, openCamera, orientationNow, recordFor, stopStream, unlockAudio } from './capture.js';
 import { makeVideo, measureFps, preloadPose, whenReady } from './pose.js';
-import { checkFps, checkOrientation } from './precheck.js';
+import { checkFps } from './precheck.js';
 import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
 import { lineChart, trend } from './progress.js';
 import { drawSkeleton } from './skeleton.js';
-import { icon, ballSvg } from './icons.js';
+import { icon, throwSvg } from './icons.js';
 import { initPress } from './motion.js';
 import { token } from './tokens.js';
 
@@ -143,7 +143,7 @@ function recordScreen() {
 const captureScreen = (tab = 'upload') => (tab === 'record' ? recordScreen() : filmScreen());
 
 /** The three filming checks shown on the film and record screens. */
-const tips = () => h('div', { class: 'tips' }, ['60 fps+', 'Phone upright, 3 m', 'Full body in frame'].map((t) => h('span', { class: 'pill' }, icon('check', 14), t)));
+const tips = () => h('div', { class: 'tips' }, ['Full body in frame', 'Good light', 'Closer is better'].map((t) => h('span', { class: 'pill' }, icon('check', 14), t)));
 
 /** The camera (and its permission prompt) is only started once the user taps "Open camera". */
 function recordPane(body) {
@@ -169,18 +169,12 @@ async function startRecorder(body) {
   const recBtn = h('button', { class: 'btn', disabled: true }, icon('record', 22), 'Record');
   body.append(cam, h('div', { class: 'row' }, h('b', {}, 'Countdown'), h('div', { class: 'seg spacer' }, opts)), recBtn);
 
-  const want = S.move.orientation;
-  const syncOrientation = () => {
-    const wrong = orientationNow() !== want;
-    overlay.style.display = wrong ? 'grid' : 'none';
-    overlay.textContent = wrong ? `Please rotate your phone to ${want} for this move.` : '';
-    recBtn.disabled = wrong || busy || !stream;
-  };
-  const offOri = onOrientationChange(syncOrientation);
-  S.cleanup = () => { gone = true; offOri(); stopStream(stream); };
+  // Portrait is recommended (see the guide) but either way is accepted: the camera opens in however the phone is held.
+  const syncOrientation = () => { recBtn.disabled = busy || !stream; };
+  S.cleanup = () => { gone = true; stopStream(stream); };
 
   try {
-    stream = await openCamera(want);
+    stream = await openCamera(orientationNow());
     if (gone) { stopStream(stream); return; } // left before the camera opened
     video.srcObject = stream;
     await video.play().catch(() => {});
@@ -226,7 +220,7 @@ async function startUpload(file, onVideo, stillHere = () => true) {
     const fps = await measureFps(v);
     if (!stillHere()) return URL.revokeObjectURL(v.src); // the user backed out while the clip was being read
     const fpsCheck = fps ? checkFps(fps, S.config) : null;
-    const msg = (fpsCheck && fpsCheck.level === 'block' && fpsCheck.message) || checkOrientation(v.videoWidth, v.videoHeight, S.move.orientation);
+    const msg = fpsCheck && fpsCheck.level === 'block' && fpsCheck.message;
     if (msg) { URL.revokeObjectURL(v.src); return go(errorScreen, msg); }
     const clip = { video: v, fps, source: 'upload', total: v.duration };
     if (v.duration > S.config.clipSeconds + 0.3) go(trimScreen, clip); else go(analyzeScreen, { ...clip, start: 0, duration: v.duration });
@@ -270,7 +264,7 @@ async function analyzeScreen(clip) {
   const preview = h('canvas', { class: 'preview', style: { display: 'none' }, role: 'img', 'aria-label': 'Live view of the player being tracked' });
   const warn = clip.fps && checkFps(clip.fps, S.config);
   mount(h('div', { class: 'screen', style: { alignItems: 'center', textAlign: 'center' } },
-    h('div', { class: 'spacer' }), ballSvg(), status, h('div', { class: 'progress-track', style: { width: '100%' }, role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail, preview, h('div', { class: 'spacer' }),
+    h('div', { class: 'spacer' }), throwSvg(), status, h('div', { class: 'progress-track', style: { width: '100%' }, role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail, preview, h('div', { class: 'spacer' }),
     warn ? h('div', { class: 'tiny-note' }, icon('alert', 14), warn.message) : null));
   try {
     const out = await runAnalysis({ clip, move: S.move, config: S.config, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
@@ -278,7 +272,7 @@ async function analyzeScreen(clip) {
       const ctx = preview.getContext('2d'); ctx.drawImage(src, 0, 0);
       if (lm) drawSkeleton(ctx, lm, { w: src.width, h: src.height, hand: null });
     },
-    onProgress: (p, info) => { bar.style.transform = `scaleX(${Math.max(0, Math.min(1, p))})`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
+    onProgress: (p, info) => { bar.style.transform = `scaleX(${Math.max(0, Math.min(1, p))})`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · ${Math.max(1, Math.round(info.etaSec))}s left` : ''}${info.done > 6 ? ` · ${info.modelMs} ms/frame` : ''}`; } });
     if (!out.ok) return go(errorScreen, out.message);
     go(reportScreen, out.result);
   } catch (e) {

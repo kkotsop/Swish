@@ -36,10 +36,11 @@ export function drawSkeleton(ctx, lm, { w, h, hand, highlight = null, box = true
   const P = (i) => ({ x: lm[i].x * w, y: lm[i].y * h, v: lm[i].v ?? 1 });
   const armSet = hand === 'right' ? new Set([12, 14, 16, 20]) : hand === 'left' ? new Set([11, 13, 15, 19]) : new Set(); // no hand yet = no highlight
   const lw = Math.max(4, w / 100);
+  const minV = (i) => (i >= 23 ? 0.12 : 0.3); // hips, knees and feet are often low-confidence but still worth showing: aim for a full-body skeleton
   ctx.lineCap = 'round';
   for (const [a, b] of BONES) {
     const pa = P(a), pb = P(b);
-    if (pa.v < 0.3 || pb.v < 0.3) continue;
+    if (pa.v < minV(a) || pb.v < minV(b)) continue;
     const hot = hand === 'right' ? [[12, 14], [14, 16], [16, 20]] : hand === 'left' ? [[11, 13], [13, 15], [15, 19]] : [];
     const isHot = hot.some(([x, y]) => x === a && y === b);
     ctx.strokeStyle = isHot ? token('--hot') : 'rgba(255,255,255,.85)';
@@ -47,7 +48,7 @@ export function drawSkeleton(ctx, lm, { w, h, hand, highlight = null, box = true
     ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
   }
   for (const i of [11, 12, 13, 14, 15, 16, 19, 20, 23, 24, 25, 26, 27, 28]) {
-    const p = P(i); if (p.v < 0.3) continue;
+    const p = P(i); if (p.v < minV(i)) continue;
     ctx.fillStyle = armSet.has(i) ? token('--hot') : '#fff';
     ctx.beginPath(); ctx.arc(p.x, p.y, lw * (armSet.has(i) ? 1.4 : 1.1), 0, Math.PI * 2); ctx.fill();
   }
