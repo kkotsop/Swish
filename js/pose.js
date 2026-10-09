@@ -2,6 +2,7 @@
 import { PoseLandmarker, FilesetResolver } from '../vendor/mediapipe/vision_bundle.mjs';
 import { isPlausibleHuman, poseBox } from './precheck.js';
 import { subjectCrop, uncropLandmarks } from './crop.js';
+import { grayOf, camPath } from './camshift.js';
 
 let landmarker = null;
 let loading = null;
@@ -129,7 +130,8 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   const view = document.createElement('canvas'); // always the full frame, for the live preview and replay stills
   const sharp = hooks.onPreview ? document.createElement('canvas') : null; // a bigger full frame for the live view, which zooms in on the player (the model's 512 px would look soft)
   const EARLY = Math.min(n, 15);
-  const S = { per: new Array(n).fill(null), lumas: [], crop: null, checked: false, scouted: false, done: 0, detMs: 0, t0: performance.now() };
+  const tiny = document.createElement('canvas'); // a tiny grey copy of every frame, to follow the background when the phone pans
+  const S = { per: new Array(n).fill(null), grays: new Array(n).fill(null), tw: 0, th: 0, lumas: [], crop: null, checked: false, scouted: false, done: 0, detMs: 0, t0: performance.now() };
   /**
    * Nobody was detected in the whole frame: the player may simply be too small for the model (filmed from the stands).
    * Run the detector on zoomed-in tiles of a few frames; if a person turns up, return a zoom crop around them.
@@ -179,6 +181,8 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   /** Analyse slot i from whatever frame the video is showing. Returns 'restart' when a zoom crop was just chosen. */
   const processFrame = (i, between) => {
     const ctx = drawFrame(video, canvas, 512, S.crop);
+    const tctx = drawFrame(video, tiny, 128, null); S.tw = tiny.width; S.th = tiny.height;
+    S.grays[i] = grayOf(tctx.getImageData(0, 0, tiny.width, tiny.height).data);
     if (!S.crop && S.lumas.length < 4 && S.done % 4 === 0) S.lumas.push(brightnessOf(ctx, canvas.width, canvas.height));
     // everything that reads the video must happen before `between` (which may start the next seek)
     const wantSample = hooks.onSample && i % 2 === 0, wantPreview = hooks.onPreview && i % 3 === 0;
@@ -276,7 +280,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   const all = Array.from({ length: n }, (_, i) => i);
   const canPlay = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   for (let attempt = 0; attempt < 3; attempt++) {
-    S.per.fill(null); S.done = 0; S.detMs = 0; S.t0 = performance.now();
+    S.per.fill(null); S.grays.fill(null); S.done = 0; S.detMs = 0; S.t0 = performance.now();
     dbg('pass', attempt, 'crop', S.crop);
     if (attempt > 0) await resetTracker(); // new crop: forget the previous full-frame tracking
     if (canPlay) await warmUp();
@@ -312,7 +316,9 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   video.pause();
   if (!hadParent) video.remove();
   const times = all.map((i) => i / fps);
-  return { per: S.per.map((p) => p || []), times, aspect: video.videoWidth / video.videoHeight, brightness: S.lumas.reduce((a, b) => a + b, 0) / (S.lumas.length || 1), crop: S.crop, modelMs: Math.round(S.detMs / Math.max(1, S.done)) };
+  const boxes = S.per.map((ps) => { const lm = ps && mainPose(ps); return lm ? poseBox(lm) : null; });
+  const cam = S.tw ? camPath(S.grays, boxes, S.tw, S.th) : { x: all.map(() => 0), y: all.map(() => 0), moved: false };
+  return { cam, camBoxes: boxes, per: S.per.map((p) => p || []), times, aspect: video.videoWidth / video.videoHeight, brightness: S.lumas.reduce((a, b) => a + b, 0) / (S.lumas.length || 1), crop: S.crop, modelMs: Math.round(S.detMs / Math.max(1, S.done)) };
 }
 
 /** Grab a still (JPEG data URL, max 960px wide) at an analysis time offset; the report crops it to the player. */

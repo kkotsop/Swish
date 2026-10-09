@@ -22,19 +22,19 @@
     "shooting": {
       "confidenceWeights": { "high": 1, "medium": 0.7, "low": 0.25 },
       "weights": {
-        "releaseAngle": 1, "forwardDrift": 1, "kneeDip": 1, "elbowAlignment": 1,
+        "releaseAngle": 5, "forwardDrift": 1, "kneeDip": 1, "elbowAlignment": 1,
         "releaseHeight": 1, "tempo": 1, "legArmTiming": 1, "stance": 1, "guideHand": 1
       },
       "ranges": {
-        "releaseAngle":  { "good": [45, 90], "ideal": [49, 90], "tolerance": [10, 1] },
-        "forwardDrift":  { "good": [0, 0.2], "ideal": [0, 0.08], "tolerance": 0.2 },
-        "kneeDip":       { "good": [20, 60], "ideal": [30, 50], "tolerance": 12 },
+        "releaseAngle":  { "good": [45, 90], "ideal": [55, 90], "tolerance": [3, 1] },
+        "forwardDrift":  { "good": [0, 0.7], "ideal": [0, 0.45], "tolerance": 0.35 },
+        "kneeDip":       { "good": [15, 85], "ideal": [25, 75], "tolerance": 12 },
         "elbowAlignment":{ "good": [0, 12], "ideal": [0, 6], "tolerance": 10 },
         "releaseHeight": { "good": [1.05, 1.45], "ideal": [1.15, 1.45], "tolerance": 0.12 },
         "tempo":         { "good": [0, 1.2], "ideal": [0, 0.8], "tolerance": 0.3 },
         "legArmTiming":  { "good": [0, 0.2], "ideal": [0, 0.1], "tolerance": 0.15 },
         "stance":        { "good": [0.85, 1.4], "ideal": [0.95, 1.25], "tolerance": [0.25, 0.5] },
-        "guideHand":     { "good": [0, 0.9], "ideal": [0, 0.6], "tolerance": 0.7 }
+        "guideHand":     { "good": [-6, 0.6], "ideal": [-6, 0.2], "tolerance": 1.0 }
       }
     }
   }

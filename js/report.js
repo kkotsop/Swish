@@ -2,7 +2,7 @@
 import { h, buzz } from './ui.js';
 import { drawSkeleton, focusJoint } from './skeleton.js';
 import { icon, STATUS_ICON } from './icons.js';
-import { reducedMotion } from './tokens.js';
+import { reducedMotion, token } from './tokens.js';
 import { scoreBand, CATEGORIES } from './coaching.js';
 import { playerBox, fitAspect } from './crop.js';
 
@@ -53,27 +53,54 @@ export function targetText(m, r) {
   return lo <= 0 ? `under ${hi}${u}${note}` : `${lo}–${hi}${u}${note}`;
 }
 
+/** Where you started, as a faint skeleton under the landing pose, joined to it by an arrow at hip height. Returns a function that paints the two labels: call it after the landing skeleton so no bone covers them. */
+function drawGhost(g, ghost, lm, sw, sh) {
+  g.save(); g.globalAlpha = 0.5;
+  drawSkeleton(g, ghost, { w: sw, h: sh, hand: null, box: false });
+  g.restore();
+  const mid = (p) => ({ x: ((p[23].x + p[24].x) / 2) * sw, y: ((p[23].y + p[24].y) / 2) * sh });
+  const a = mid(ghost), b = mid(lm), lw = Math.max(3, sw / 180), dir = Math.sign(b.x - a.x) || 1;
+  if (Math.abs(b.x - a.x) > lw * 3) {
+    g.save(); g.strokeStyle = token('--warn'); g.fillStyle = token('--warn'); g.lineWidth = lw; g.setLineDash([lw * 2.5, lw * 2]); g.lineCap = 'round';
+    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x - dir * lw * 4, a.y); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(b.x, a.y); g.lineTo(b.x - dir * lw * 5, a.y - lw * 3); g.lineTo(b.x - dir * lw * 5, a.y + lw * 3); g.closePath(); g.fill();
+    g.restore();
+  }
+  const fs = Math.max(13, sw / 30), tag = (text, x, y) => {
+    g.save(); g.font = `800 ${fs}px ${token('--font')}`; g.textBaseline = 'middle';
+    const tw = g.measureText(text).width + fs, px = Math.max(0, Math.min(sw - tw, x - tw / 2));
+    g.fillStyle = 'rgba(8, 12, 20, .78)'; g.fillRect(px, y - fs * 0.85, tw, fs * 1.7); g.fillStyle = '#fff'; g.fillText(text, px + fs / 2, y); g.restore();
+  };
+  const top = (p) => Math.min(...p.filter((q, i) => q && (q.v ?? 1) > 0.3 && i < 11).map((q) => q.y)) * sh;
+  // Both labels sit above their own head; when the two figures are close the tags would land on top of each other, so the second steps up (or down at the top edge).
+  const ya = Math.max(fs, top(ghost) - fs * 1.2); let yb = Math.max(fs, top(lm) - fs * 1.2);
+  if (Math.abs(a.x - b.x) < fs * 7 && Math.abs(ya - yb) < fs * 1.9) yb = ya - fs * 1.9 >= fs ? ya - fs * 1.9 : ya + fs * 1.9;
+  return () => { tag('START', a.x, ya); tag('LANDED', b.x, yb); };
+}
+
 /** Draw the frame with its overlay, then show the player-centred crop. */
 const scratch = document.createElement('canvas');
-function paintCropped(canvas, img, lm, box, { hand, highlight = null, dim = 0 }) {
+function paintCropped(canvas, img, lm, box, { hand, highlight = null, dim = 0, ghost = null }) {
   const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
   if (scratch.width !== sw || scratch.height !== sh) { scratch.width = sw; scratch.height = sh; }
   const g = scratch.getContext('2d');
   g.drawImage(img, 0, 0, sw, sh);
   if (dim) { g.fillStyle = `rgba(0,0,0,${dim})`; g.fillRect(0, 0, sw, sh); }
+  const ghostLabels = ghost ? drawGhost(g, ghost, lm, sw, sh) : null;
   drawSkeleton(g, lm, { w: sw, h: sh, hand, highlight });
+  if (ghostLabels) ghostLabels();
   const c = fitAspect(box, sw, sh);
   if (canvas.width !== Math.round(c.w) || canvas.height !== Math.round(c.h)) { canvas.width = Math.round(c.w); canvas.height = Math.round(c.h); }
   canvas.getContext('2d').drawImage(scratch, c.x, c.y, c.w, c.h, 0, 0, canvas.width, canvas.height);
 }
 
-function frameCanvas(still, { hand, metricId }) {
+function frameCanvas(still, { hand, metricId, ghost = null }) {
   const wrap = h('div', { class: 'frame-wrap rise pop' });
   const canvas = h('canvas', { role: 'img', 'aria-label': 'Key frame of your shot with the tracked joints drawn on' });
   wrap.append(canvas);
   const img = new Image();
-  const box = playerBox([still.lm]);
-  img.onload = () => paintCropped(canvas, img, still.lm, box, { hand, highlight: focusJoint(metricId, hand), dim: 0.12 });
+  const box = playerBox([still.lm, ghost]);
+  img.onload = () => paintCropped(canvas, img, still.lm, box, { hand, highlight: ghost ? null : focusJoint(metricId, hand), dim: 0.12, ghost });
   img.src = still.src;
   return wrap;
 }
@@ -173,7 +200,7 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
     slides.push(slideOf[id] = h('section', { class: 'slide metric', 'aria-label': c.name },
       h('div', { class: 'mcat rise' }, CATEGORIES[catIndex(id)].name),
       h('div', { class: 'mhead rise' }, h('div', { class: 'cap' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`), badge(m.status)),
-      result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: m.status === 'unknown' ? null : id }) : null, // a blank has nothing to point at
+      result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: m.status === 'unknown' ? null : id, ghost: id === 'forwardDrift' && m.ghost ? m.ghost : null }) : null, // a blank has nothing to point at
       factsBlock(m, r), zoneBar(m, r, marks),
       h('h4', { class: 'rise' }, m.status === 'good' ? 'Keep it up' : 'How to improve'), h('p', { class: 'fix rise' }, result.advice[id]),
       h('h4', { class: 'rise' }, 'Why it matters'), h('p', { class: 'why rise' }, c.why)));

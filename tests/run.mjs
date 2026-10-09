@@ -10,6 +10,7 @@ import { playerBox, fitAspect } from '../js/crop.js';
 import { project, rubberband } from '../js/motion.js';
 import { weekIndex, journey, milestones, rankFor, LADDER } from '../js/journey.js';
 import { camTarget, stepCam, cropRect } from '../js/followcam.js';
+import { camPath, grayOf, estimateShift, maskOf } from '../js/camshift.js';
 
 const config = JSON.parse(fs.readFileSync(new URL('../config/settings.json', import.meta.url)));
 const run = (o) => { const s = makeShot(o); return { s, r: analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config }) }; };
@@ -96,7 +97,7 @@ test('knee dip is the deepest bend of the shot', () => {
 
 test('guide hand: near the ball is good, hanging low is flagged', () => {
   const near_ = run({ guideMode: 'near' }).r, low = run({ guideMode: 'low' }).r;
-  assert.equal(near_.metrics.guideHand.status, 'good');
+  assert.equal(near_.metrics.guideHand.status, 'good', JSON.stringify(near_.metrics.guideHand));
   assert.ok(low.metrics.guideHand.value > near_.metrics.guideHand.value + 0.8, `${low.metrics.guideHand.value} vs ${near_.metrics.guideHand.value}`);
   assert.notEqual(low.metrics.guideHand.status, 'good');
   assert.equal(near_.guideHand, 'left'); // right-handed shooter -> off hand is the left
@@ -134,16 +135,13 @@ test('a standing clip is flagged as a doubtful shot or rejected, never trusted',
   assert.ok(!r.ok || r.weakShot);
 });
 
-test('stance: measured from the front, estimated from depth (low confidence) from the side; too close is punished harder than too wide', () => {
+test('stance: measured from the front only (from the side the gap points at the camera); too close is punished harder than too wide', () => {
   const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
   near(front.metrics.stance.value, 0.57, 0.08, 'feet 0.08 apart, shoulders 0.14 apart');
-  assert.notEqual(front.metrics.stance.status, 'good'); // too narrow for the 0.9-1.5 zone
-  const side = run({}).r, narrow = run({ stanceDepth: 0.01 }).r, wide = run({ stanceDepth: 0.2 }).r;
-  assert.ok(side.metrics.stance, 'the side view has a stance card too');
-  assert.equal(side.metrics.stance.confidence, 'low', 'depth from one camera is rough');
-  assert.equal(side.metrics.stance.status, 'good', `${side.metrics.stance.value}`);
-  assert.ok(narrow.metrics.stance.value < side.metrics.stance.value && wide.metrics.stance.value > side.metrics.stance.value, 'follows how far apart the feet are in depth');
-  assert.notEqual(narrow.metrics.stance.status, 'good');
+  assert.notEqual(front.metrics.stance.status, 'good'); // too narrow for the zone
+  const side = run({}).r;
+  assert.equal(side.metrics.stance, undefined, 'the side view leaves stance blank instead of guessing from depth');
+  assert.ok(!SIDE_METRICS.includes('stance') && FRONT_METRICS.includes('stance'));
   const rg = config.moves.shooting.ranges.stance;
   const tooClose = scoreValue(rg.good[0] - 0.3, rg), tooWide = scoreValue(rg.good[1] + 0.3, rg);
   assert.ok(tooClose.score < tooWide.score, `close ${tooClose.score} vs wide ${tooWide.score}`);
@@ -453,12 +451,11 @@ test('headline weights each metric by tracking confidence, so a guess barely mov
   assert.equal(headlineScore({ a: m(80, 'low'), b: m(60, 'low') }, w, cw), 70, 'all low confidence still averages normally');
   assert.equal(headlineScore({ a: { status: 'good', score: 80 } }, w, cw), 80, 'no confidence field counts fully');
   assert.equal(headlineScore({ a: m(80, 'high'), b: { status: 'unknown', score: 0, confidence: 'high' } }, w, cw), 80, 'blanks never count');
-  // the real side-view shot: stance is always low confidence, so it cannot sink an otherwise good score
-  const { r } = run({});
-  assert.equal(r.metrics.stance.confidence, 'low');
-  const base = headlineScore(r.metrics, config.moves.shooting.weights, cw);
-  const sunk = { ...r.metrics, stance: { ...r.metrics.stance, score: 0, status: 'needs-work' } };
-  assert.ok(base - headlineScore(sunk, config.moves.shooting.weights, cw) < 8, 'a zero on stance costs under 8 points');
+  // a metric the camera barely saw cannot sink an otherwise good score
+  const w3 = { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1 };
+  const seven = Object.fromEntries(Object.keys(w3).map((k) => [k, m(90, 'high')]));
+  const base = headlineScore(seven, w3, cw);
+  assert.ok(base - headlineScore({ ...seven, g: m(0, 'low') }, w3, cw) < 14, 'a zero on a low-confidence metric costs under 14 points');
 });
 
 // ---- follow camera for the live view
@@ -501,15 +498,62 @@ test('follow camera: a player filling the frame is not zoomed, and unseen bodies
 test('release angle: only a flat release is penalised, a higher arc is never wrong', () => {
   const rg = config.moves.shooting.ranges.releaseAngle;
   assert.deepEqual(rg.good, [45, 90]);
-  for (const v of [49, 55, 62, 70, 80, 90]) { const r = scoreValue(v, rg); assert.equal(r.score, 100, `${v} deg`); assert.equal(r.status, 'good'); }
+  for (const v of [55, 62, 70, 80, 90]) { const r = scoreValue(v, rg); assert.equal(r.score, 100, `${v} deg`); assert.equal(r.status, 'good'); }
   assert.ok(scoreValue(46, rg).score >= 85 && scoreValue(46, rg).score < 100, 'just inside the line is good but not full marks');
   assert.equal(scoreValue(45, rg).score, 85);
-  assert.equal(scoreValue(40, rg).status, 'borderline'); assert.ok(scoreValue(40, rg).score < 85);
-  assert.equal(scoreValue(35, rg).score, 50); assert.equal(scoreValue(20, rg).status, 'needs-work');
+  assert.equal(scoreValue(43, rg).status, 'borderline'); assert.ok(scoreValue(43, rg).score < 85);
+  assert.equal(scoreValue(42, rg).score, 50); assert.equal(scoreValue(40, rg).score < 20, true, 'a clearly flat release is near zero'); assert.equal(scoreValue(20, rg).status, 'needs-work');
   const flat = { id: 'releaseAngle', value: 30, unit: 'deg', ...scoreValue(30, rg) };
   assert.notEqual(flat.status, 'good');
   const adv = templateAdvice('shooting', { releaseAngle: flat }, config.moves.shooting.ranges).releaseAngle;
   assert.match(adv, /45° or steeper/); assert.doesNotMatch(adv, /58/);
+});
+
+// ---- camera pan estimation (the phone follows the player)
+const W0 = 72, H0 = 128;
+/** A textured "scene" that can be sampled at any sub-pixel offset, so slow pans are exact in the test. */
+const scene = (x, y) => 128 + 40 * Math.sin(x * 0.31 + 1) * Math.cos(y * 0.23) + 35 * Math.sin(x * 0.11 + y * 0.17) + 25 * Math.cos(x * 0.47 - y * 0.29 + 2);
+const frameAt = (shiftPx, player = null) => { // content moved right by shiftPx
+  const g = new Uint8Array(W0 * H0);
+  for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) g[y * W0 + x] = Math.max(0, Math.min(255, scene(x - shiftPx, y)));
+  if (player) for (let y = player.y0; y < player.y1; y++) for (let x = player.x0; x < player.x1; x++) g[y * W0 + x] = (x * 7 + y * 13) % 255; // a moving "person", very different from the background
+  return g;
+};
+test('camera pan: a slow pan is measured at close to its true size (consecutive frames alone would read about half)', () => {
+  const n = 60, per = 0.35; // 0.35 px a frame: 21 px in all, 29% of the width
+  const grays = Array.from({ length: n }, (_, i) => frameAt(i * per));
+  const cam = camPath(grays, null, W0, H0);
+  assert.equal(cam.moved, true);
+  near(cam.x[n - 1], (n - 1) * per / W0, 0.02, 'total pan as a fraction of the width');
+  near(cam.x[30], 30 * per / W0, 0.015, 'and halfway');
+  near(cam.y[n - 1], 0, 0.01, 'no vertical movement');
+});
+
+test('camera pan: a fixed camera gives exactly zero, frames that were not analysed are bridged, the player is ignored', () => {
+  const still = Array.from({ length: 30 }, () => frameAt(0));
+  const c0 = camPath(still, null, W0, H0);
+  assert.equal(c0.moved, false); assert.ok(c0.x.every((v) => v === 0));
+  const grays = Array.from({ length: 50 }, (_, i) => (i % 3 === 0 ? frameAt(i * 0.5) : null)); // only every third frame analysed
+  const cam = camPath(grays, null, W0, H0);
+  near(cam.x[48], 48 * 0.5 / W0, 0.02, 'gaps do not lose the pan');
+  const box = { x0: 0.35, x1: 0.65, y0: 0.3, y1: 0.8 }, pl = { x0: 25, x1: 47, y0: 38, y1: 102 };
+  const withPlayer = Array.from({ length: 40 }, (_, i) => frameAt(i * 0.4, { x0: pl.x0 + (i % 5), x1: pl.x1 + (i % 5), y0: pl.y0, y1: pl.y1 }));
+  const boxes = withPlayer.map((_, i) => ({ x0: box.x0 + (i % 5) / W0, x1: box.x1 + (i % 5) / W0, y0: box.y0, y1: box.y1 }));
+  near(camPath(withPlayer, boxes, W0, H0).x[39], 39 * 0.4 / W0, 0.03, 'with the player masked out');
+  assert.deepEqual(maskOf(null, 4, 4), new Uint8Array(16));
+  const s = estimateShift(frameAt(0), frameAt(3), W0, H0, null, null); near(s.dx, 3, 0.2, 'whole-pixel shift'); near(s.dy, 0, 0.2, 'no vertical');
+});
+
+test('forward drift is measured in the world: a player who stands still in the picture while the camera pans has drifted', () => {
+  const sh = makeShot({});
+  const base = analyzeShooting(sh.frames, { aspect: ASPECT, fps: 60, config });
+  const frames = sh.frames.map((f, i) => ({ ...f, cam: { x: (i / sh.frames.length) * 0.6, y: 0 } })); // the camera panned 60% of the width over the clip
+  const panned = analyzeShooting(frames, { aspect: ASPECT, fps: 60, config });
+  assert.ok(Number.isFinite(base.metrics.forwardDrift.value) && Number.isFinite(panned.metrics.forwardDrift.value));
+  assert.ok(Math.abs(panned.metrics.forwardDrift.value - base.metrics.forwardDrift.value) > 0.15, `${base.metrics.forwardDrift.value} vs ${panned.metrics.forwardDrift.value}`);
+  const g = panned.metrics.forwardDrift;
+  assert.ok(g.ghost && g.ghost.length === 33 && Number.isInteger(g.startFrame), 'the starting pose comes with the metric so the card can show both');
+  assert.ok(g.startFrame < g.frame, 'start is before landing');
 });
 
 let passed = 0;

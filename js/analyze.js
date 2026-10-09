@@ -51,6 +51,7 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
   if (tracking.fatal) return fail(tracking.fatal.message);
   warnings.push(...tracking.notes.map((x) => x.message));
 
+  subject.frames.forEach((f, i) => { f.cam = pass.cam ? { x: pass.cam.x[i] || 0, y: pass.cam.y[i] || 0 } : null; }); // the phone may have panned: positions are taken in the world, not the picture
   onStatus('Analysing your shot…');
   const analysis = move.analyze(subject.frames, { aspect: pass.aspect, fps, config });
   if (!analysis.ok) return fail(analysis.error === 'too-short' ? MESSAGES.tooShort : MESSAGES.noShot);

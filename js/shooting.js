@@ -7,7 +7,7 @@
 // Metrics that cannot be measured reliably from a view are simply not reported for it.
 import { LM, angleAt, argmax, argmin, clamp, deg, dist, fillGaps, mean, median, smoothSeries } from './mathutil.js';
 
-export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'kneeDip', 'releaseHeight', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
+export const SIDE_METRICS = ['releaseAngle', 'forwardDrift', 'kneeDip', 'releaseHeight', 'tempo', 'legArmTiming', 'guideHand'];
 export const FRONT_METRICS = ['elbowAlignment', 'releaseHeight', 'tempo', 'legArmTiming', 'stance', 'guideHand'];
 export const SHOOTING_METRICS = [...new Set([...SIDE_METRICS, ...FRONT_METRICS])];
 export const metricsForView = (view) => (view === 'front' ? FRONT_METRICS : SIDE_METRICS);
@@ -22,7 +22,7 @@ export function blankMetric(id, frame) {
   return { id, value: NaN, unit: BLANK_UNIT[id] || '', frame, confidence: 'low', status: 'unknown', score: 0, reason }; // the unit keeps the target text right (45–55°)
 }
 
-/** Build smoothed per-landmark series in aspect-corrected units (x scaled by width/height). */
+/** Build smoothed per-landmark series in aspect-corrected units (x scaled by width/height), in the world (camera movement taken out). */
 function buildSeries(frames, aspect, smoothN) {
   const n = frames.length;
   const series = {};
@@ -31,7 +31,8 @@ function buildSeries(frames, aspect, smoothN) {
     const xs = new Array(n).fill(NaN), ys = new Array(n).fill(NaN), zs = new Array(n).fill(NaN), vs = new Array(n).fill(0);
     frames.forEach((f, i) => {
       const p = f.lm && f.lm[idx];
-      if (p) { xs[i] = p.x * aspect; ys[i] = p.y; zs[i] = (p.z ?? 0) * aspect; vs[i] = p.v ?? 1; } // z (depth) is on the same scale as x
+      const cx = f.cam ? f.cam.x : 0, cy = f.cam ? f.cam.y : 0; // the phone may have panned while following the player
+      if (p) { xs[i] = (p.x - cx) * aspect; ys[i] = p.y - cy; zs[i] = (p.z ?? 0) * aspect; vs[i] = p.v ?? 1; } // z (depth) is on the same scale as x
     });
     const sx = smoothSeries(fillGaps(xs), smoothN), sy = smoothSeries(fillGaps(ys), smoothN), sz = smoothSeries(fillGaps(zs), smoothN);
     series[name] = sx.map((x, i) => ({ x, y: sy[i], z: sz[i] }));
@@ -135,10 +136,16 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   //      release is the first frame at (nearly) full elbow extension around that peak (the ball itself is not tracked).
   const peak = argmax(rises);
   const elbowAng = sh.map((s, i) => angleAt(s, el[i], wr[i]));
-  const extFrom = Math.max(0, peak - rate(0.35)), extTo = Math.min(n - 1, peak + rate(0.05));
+  // The ball leaves as the elbow goes from bent to straight, which is NOT always when the hand is highest: a slow follow-through
+  // keeps the arm rising for another half second. So start from the most bent moment before the peak (the set) and take the
+  // first frame after it where the elbow is (nearly) straight.
+  const winFrom = Math.max(0, peak - rate(1.2)), extTo = Math.min(n - 1, peak + rate(0.05));
+  const bentAt = argmin(elbowAng, winFrom, peak);
+  const extFrom = bentAt >= 0 ? bentAt : winFrom;
   const extMax = Math.max(...elbowAng.slice(extFrom, extTo + 1).filter(Number.isFinite));
+  const straight = Math.min(160, extMax - 6);
   let release = argmax(elbowAng, extFrom, extTo);
-  for (let i = extFrom; i <= extTo; i++) { if (elbowAng[i] >= extMax - 6) { release = i; break; } }
+  for (let i = extFrom; i <= extTo; i++) { if (elbowAng[i] >= straight) { release = i; break; } }
   if (release < 0) release = Math.max(0, peak);
 
   // Is it really a shot?
@@ -182,12 +189,14 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const shin = median(S.lKnee.map((k, i) => (dist(k, S.lAnkle[i]) + dist(S.rKnee[i], S.rAnkle[i])) / 2));
   const jumpEps = 0.03 * standingH;
 
+  // The feet can leave the floor after the ball has left the hand (a shot released early in the jump), so look past the release.
+  const jumpEnd = Math.min(n - 1, release + rate(0.7));
   let takeoff = bottom;
-  for (let i = bottom; i <= release; i++) { if (ankBase - ankY[i] > jumpEps) { takeoff = i; break; } takeoff = i; }
-  const apex = argmin(ankY, takeoff, Math.min(n - 1, release + rate(0.5)));
-  let landing = n - 1;
-  for (let i = Math.max(apex, release); i < n; i++) { if (ankBase - ankY[i] <= jumpEps) { landing = i; break; } }
+  for (let i = bottom; i <= jumpEnd; i++) { if (ankBase - ankY[i] > jumpEps) { takeoff = i; break; } takeoff = i; }
+  const apex = argmin(ankY, takeoff, jumpEnd);
   const jumped = ankBase - ankY[apex] > jumpEps;
+  let landing = jumped ? Math.min(n - 1, apex + rate(0.4)) : Math.min(n - 1, release + rate(0.4));
+  if (jumped) for (let i = apex; i <= Math.min(n - 1, apex + rate(1.0)); i++) { if (ankBase - ankY[i] <= jumpEps) { landing = i; break; } }
 
   // Set point = the held-ball moment just before the arm drives up.
   let set, setFound = true, best = Infinity;
@@ -222,17 +231,23 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   const indexName = side === 'r' ? 'rIndex' : 'lIndex';
 
   if (view === 'side') {
-    // Release angle: the direction the wrist travels over the last moments of the push, up to the release, measured from the
-    // horizontal. Uses |horizontal| so it is always 0..90 and independent of which way you face.
-    const pushLag = Math.max(2, rate(0.15)), from0 = Math.max(0, release - pushLag);
-    const vy = wr[from0].y - wr[release].y, vx = Math.abs(wr[release].x - wr[from0].x);
-    add('releaseAngle', vy > 0 ? deg(Math.atan2(vy, vx)) : NaN, 'deg', release, [armNames[2]], from0, release);
+    // Release angle: how steeply the arm points when it is fully extended and the ball is leaving the hand, measured from the
+    // horizontal along shoulder -> wrist. Flat (a push forward) is the thing to catch; it is always 0..90 and independent of
+    // which way you face. Read over three frames around the release so one noisy frame cannot decide it.
+    const armDeg = (i) => deg(Math.atan2(sh[i].y - wr[i].y, Math.abs(wr[i].x - sh[i].x)));
+    const rFrames = [release - 1, release, release + 1].filter((i) => i >= 0 && i < n);
+    add('releaseAngle', clamp(median(rFrames.map(armDeg)), 0, 90), 'deg', release, armNames, release - 1, release + 1);
 
-    // Forward drift: hip travel takeoff -> landing in shin lengths.
-    const driftLanding = ((hipX[landing] - hipX[takeoff]) * facing) / (shin || 1);
-    add('forwardDrift', Math.abs(driftLanding), 'shins', landing, ['lHip', 'rHip', 'lAnkle', 'rAnkle'], takeoff, landing, {
-      signed: driftLanding, driftAtRelease: ((hipX[release] - hipX[takeoff]) * facing) / (shin || 1),
-      landsAfterRelease: (landing - release) / fps, jumped, note: driftLanding >= 0 ? 'forward' : 'backward',
+    // Forward drift: where the hips are when you land against where you started (before the dip), in shin lengths. Positions
+    // are in the world, so a phone that pans to follow you does not hide the movement. `ghost` is your starting pose placed on
+    // the landing picture, so the card can show both.
+    const start = Math.min(loadStart, landing);
+    const driftLanding = ((hipX[landing] - hipX[start]) * facing) / (shin || 1);
+    const gl = frames[start] && frames[start].lm;
+    const camAt = (i) => (frames[i] && frames[i].cam) || { x: 0, y: 0 };
+    const ghost = gl ? gl.map((p) => ({ ...p, x: p.x + camAt(landing).x - camAt(start).x, y: p.y + camAt(landing).y - camAt(start).y })) : null;
+    add('forwardDrift', Math.abs(driftLanding), 'shins', landing, ['lHip', 'rHip', 'lAnkle', 'rAnkle'], start, landing, {
+      signed: driftLanding, jumped, note: driftLanding >= 0 ? 'forward' : 'backward', startFrame: start, ghost,
     });
 
     // Knee dip: deepest knee bend of the shot (flexion = 180 - interior angle, averaged over both legs).
@@ -246,18 +261,11 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
     add('elbowAlignment', mean(tilts), 'deg', set, armNames, set, rEnd);
   }
 
-  // Stance: how far apart the feet are before the dip. Front view: the sideways gap in shoulder widths. Side view: the gap
-  // cannot be seen directly (it points at the camera), so it is estimated from the feet's depth as well as their spacing,
-  // in shin lengths, and always reported with low confidence.
-  {
+  // Stance (front only): how far apart the feet are before the dip, in shoulder widths. From the side the gap points at the
+  // camera and cannot be read, so the side view leaves it blank rather than guessing.
+  if (view === 'front') {
     const idx = Array.from({ length: Math.max(0, baseTo - baseFrom + 1) }, (_, k) => baseFrom + k);
-    const names = ['lAnkle', 'rAnkle', 'lHip', 'rHip'];
-    if (view === 'front') {
-      add('stance', median(idx.map((i) => Math.abs(S.lAnkle[i].x - S.rAnkle[i].x))) / (shoulderW || 1), 'shoulders', baseTo, names, baseFrom, baseTo);
-    } else {
-      add('stance', median(idx.map((i) => Math.hypot(S.lAnkle[i].x - S.rAnkle[i].x, S.lAnkle[i].z - S.rAnkle[i].z))) / (shin || 1), 'shins', baseTo, names, baseFrom, baseTo);
-      m.stance.confidence = 'low'; // depth from a single camera is rough
-    }
+    add('stance', median(idx.map((i) => Math.abs(S.lAnkle[i].x - S.rAnkle[i].x))) / (shoulderW || 1), 'shoulders', baseTo, ['lAnkle', 'rAnkle', 'lHip', 'rHip'], baseFrom, baseTo);
   }
 
   // Leg-to-arm timing: the gap between the legs finishing their push and the arm finishing its extension.
@@ -284,11 +292,15 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   // Tempo: load start -> release.
   add('tempo', (release - loadStart) / fps, 's', release, ['lHip', 'rHip'], loadStart, release);
 
-  // Guide (off) hand: distance between the two wrists while the ball is held and rising, in forearm lengths.
-  const gEnd = Math.max(set + 1, Math.round(set + 0.5 * (release - set)));
+  // Guide (off) hand: where it is as the arm extends and the ball goes, measured as how far the guide wrist hangs below its own
+  // shoulder, in forearm lengths (0 = at shoulder height, negative = up beside the ball or face, 1+ = down at the chest or hip).
+  // From the moment the elbow is straight and a tenth of a second on. Distance to the shooting wrist is no use here: that wrist is
+  // travelling up and away, so the gap grows even when the guide hand is perfectly placed.
+  const gsh = S[guide + 'Shoulder'];
+  const gFrom = release, gTo = Math.min(n - 1, release + rate(0.1));
   const gd = [];
-  for (let i = set; i <= Math.min(gEnd, n - 1); i++) gd.push(dist(gw[i], wr[i]) / (dist(el[i], wr[i]) || 1));
-  add('guideHand', mean(gd), 'forearms', set, [armNames[2], guide === 'r' ? 'rWrist' : 'lWrist'], set, gEnd);
+  for (let i = gFrom; i <= gTo; i++) gd.push((gw[i].y - gsh[i].y) / (dist(el[i], wr[i]) || 1));
+  add('guideHand', mean(gd), 'forearms', release, [armNames[2], guide === 'r' ? 'rWrist' : 'lWrist'], gFrom, gTo);
 
   if (weakShot) for (const id of Object.keys(m)) m[id].confidence = 'low';
   return {

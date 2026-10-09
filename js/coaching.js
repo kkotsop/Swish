@@ -12,19 +12,19 @@ const CAT = { releaseAngle: 'shot', elbowAlignment: 'shot', releaseHeight: 'shot
 export const SHOOTING_COPY = {
   releaseAngle: {
     name: 'Release angle', short: 'Release',
-    what: 'The direction the ball travels as it leaves your hand, measured from your wrist movement.',
-    why: 'A flat release sends the ball on a low line to the rim, so you need a perfect aim to score. A high arc has a bigger target, so steeper is never a problem.',
+    what: 'How steeply your shooting arm points, measured from the horizontal, at the moment it is fully extended and the ball leaves your hand.',
+    why: 'A flat arm pushes the ball forward on a low line, so you need a perfect aim to score. A steeper arm gives a high, soft arc with a bigger target, so steeper is never a problem.',
     improve: (v, r, res) => res.status === 'good'
-      ? `Your release angle is ${fmt(v, 0)}°, ${v >= 60 ? 'a high, soft arc' : `above the ${r.good[0]}° line`}. Keep driving up through the ball.`
-      : `Your release angle is ${fmt(v, 0)}°; aim for ${r.good[0]}° or steeper. Drive up through your legs and release at the top of the jump instead of pushing the ball forward with your arm.`,
+      ? `Your arm is ${fmt(v, 0)}° above horizontal when the ball leaves your hand, ${v >= 60 ? 'a high, soft arc' : `above the ${r.good[0]}° line`}. Keep driving up through the ball.`
+      : `Your arm is only ${fmt(v, 0)}° above horizontal when the ball leaves your hand; aim for ${r.good[0]}° or steeper. That is a push forward. Drive up through your legs, get the ball above your forehead and finish with the arm pointing up at the rim, not out at it.`,
   },
   forwardDrift: {
     name: 'Forward drift', short: 'Balance',
-    what: 'How far your body travels forward (or back) between takeoff and landing, measured in shin lengths.',
-    why: 'Drifting while the ball is still in your hand throws off your balance and your aim. Good shooters land close to where they took off.',
+    what: 'How far your hips travel between where you started (before the dip) and where you land, in shin lengths. The camera\u2019s own movement is taken out, so it also works when the phone follows you.',
+    why: 'Drifting through the shot throws off your balance and your aim. Good shooters jump straight up and land close to where they started.',
     improve: (v, r, res) => res.status === 'good'
-      ? `You travelled ${fmt(v, 2)} shin lengths ${res.note}. Great balance, you land where you launched.`
-      : `You drifted ${fmt(v, 2)} shin lengths ${res.note}; aim for under ${r.good[1]}. Jump straight up, keep your core tight and land on the same spot you took off from.`,
+      ? `You landed ${fmt(v, 2)} shin lengths ${res.note} of where you started. Great balance, you land where you launched.`
+      : `You landed ${fmt(v, 2)} shin lengths ${res.note} of where you started (see the faint figure); aim for under ${r.good[1]}. Jump straight up, keep your core tight and land on the spot you took off from.`,
   },
   kneeDip: {
     name: 'Knee dip depth', short: 'Knee dip',
@@ -72,10 +72,10 @@ export const SHOOTING_COPY = {
   },
   stance: {
     name: 'Stance width', short: 'Stance',
-    what: 'How far apart your feet are before you shoot: compared with your shoulder width from the front, estimated from depth in shin lengths from the side.',
+    what: 'How far apart your feet are before you shoot, compared with your shoulder width. Only measured from the front: from the side the gap points at the camera.',
     why: 'Feet about shoulder width apart give a stable base. Too close together and you wobble (the bigger problem), too wide and you lose the power from your legs.',
     improve: (v, r, res) => {
-      const u = res.unit === 'shoulders' ? 'shoulder widths' : 'shin lengths', est = res.unit === 'shoulders' ? '' : ' (an estimate from the side)';
+      const u = 'shoulder widths', est = '';
       return res.status === 'good'
         ? `Your feet are ${fmt(v, 2)} ${u} apart${est}, a stable base.`
         : v < r.good[0]
@@ -85,11 +85,11 @@ export const SHOOTING_COPY = {
   },
   guideHand: {
     name: 'Guide hand', short: 'Off hand',
-    what: 'How close your off hand stays to the ball while it is held and rising, measured in forearm lengths from your shooting hand.',
-    why: 'The off hand should only steady the ball from the side. If it drifts away or hangs low it cannot guide the ball, and if it pushes it adds sidespin and misses left or right.',
+    what: 'How far your off hand hangs below its own shoulder at the moment your arm extends and the ball leaves, in forearm lengths. Negative means it is up above the shoulder.',
+    why: 'The off hand should steady the ball from the side and come away cleanly. If it has already dropped away or hangs low it cannot guide the ball, and if it pushes it adds sidespin and misses left or right.',
     improve: (v, r, res) => res.status === 'good'
-      ? `Your off hand stays ${fmt(v, 1)} forearms from your shooting hand, close enough to steady the ball from the side.`
-      : `Your off hand is ${fmt(v, 1)} forearms away from your shooting hand; aim for under ${r.good[1]}. Keep it on the side of the ball with fingers up and thumb relaxed, and let it come off as you release.`,
+      ? `As the ball leaves, your off hand is still up (${fmt(v, 1)} forearms from shoulder height, negative = above it) beside the ball and coming away cleanly.`
+      : `As the ball leaves, your off hand has dropped ${fmt(v, 1)} forearms below your shoulder; aim for no lower than ${r.good[1]}. It has dropped away. Keep it up on the side of the ball with fingers up and thumb relaxed, and let it come off after the ball does, not before.`,
   },
 };
 
