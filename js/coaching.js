@@ -13,12 +13,10 @@ export const SHOOTING_COPY = {
   releaseAngle: {
     name: 'Release angle', short: 'Release',
     what: 'The direction the ball travels as it leaves your hand, measured from your wrist movement.',
-    why: 'A flat release sends the ball on a low line to the rim, so you need a perfect aim to score. A high arc has a bigger target.',
+    why: 'A flat release sends the ball on a low line to the rim, so you need a perfect aim to score. A high arc has a bigger target, so steeper is never a problem.',
     improve: (v, r, res) => res.status === 'good'
-      ? `Your release angle is ${fmt(v, 0)}°, right in the ${r.good[0]}–${r.good[1]}° zone. Keep driving up through the ball.`
-      : v < r.good[0]
-        ? `Your release angle is ${fmt(v, 0)}°; aim for ${r.good[0]}–${r.good[1]}°. Drive up through your legs and release at the top of the jump instead of pushing the ball forward with your arm.`
-        : `Your release angle is ${fmt(v, 0)}°, steeper than the ${r.good[0]}–${r.good[1]}° zone. Let the ball travel more forward toward the rim and extend your arm through the target.`,
+      ? `Your release angle is ${fmt(v, 0)}°, ${v >= 60 ? 'a high, soft arc' : `above the ${r.good[0]}° line`}. Keep driving up through the ball.`
+      : `Your release angle is ${fmt(v, 0)}°; aim for ${r.good[0]}° or steeper. Drive up through your legs and release at the top of the jump instead of pushing the ball forward with your arm.`,
   },
   forwardDrift: {
     name: 'Forward drift', short: 'Balance',

@@ -26,7 +26,7 @@
         "releaseHeight": 1, "tempo": 1, "legArmTiming": 1, "stance": 1, "guideHand": 1
       },
       "ranges": {
-        "releaseAngle":  { "good": [45, 58], "ideal": [49, 55], "tolerance": 10 },
+        "releaseAngle":  { "good": [45, 90], "ideal": [49, 90], "tolerance": [10, 1] },
         "forwardDrift":  { "good": [0, 0.2], "ideal": [0, 0.08], "tolerance": 0.2 },
         "kneeDip":       { "good": [20, 60], "ideal": [30, 50], "tolerance": 12 },
         "elbowAlignment":{ "good": [0, 12], "ideal": [0, 6], "tolerance": 10 },

@@ -34,7 +34,7 @@ function zoneBar(m, r, marks) {
   const min = lo <= 0 ? 0 : lo - 2 * tl, max = hi + 2 * th;
   const cut = [min, lo - tl, lo, hi, hi + th, max].map((v) => Math.max(min, Math.min(max, v)));
   const kinds = ['needs-work', 'borderline', 'good', 'borderline', 'needs-work'];
-  const segs = kinds.map((k, i) => ({ k, w: cut[i + 1] - cut[i] })).filter((x) => x.w > 1e-9);
+  const segs = kinds.map((k, i) => ({ k, w: cut[i + 1] - cut[i] })).filter((x) => x.w > 0.02 * (max - min)); // a sliver (such as the unused 'too steep' end of an open-ended range) is just clutter
   const pos = Math.max(0, Math.min(1, (m.value - min) / (max - min)));
   const track = h('div', { class: 'track' }, segs.map((x) => h('i', { class: `seg ${x.k}${x.k === m.status ? ' on' : ''}`, style: { flexBasis: `${(x.w / (max - min)) * 100}%` } })));
   const mark = h('i', { class: 'mark pop' });
@@ -49,6 +49,7 @@ function zoneBar(m, r, marks) {
 /** "45–55°" or "under 0.25 shins". */
 export function targetText(m, r) {
   const [lo, hi] = r.good, u = unitSym(m), note = unitNote(m);
+  if (m.unit === 'deg' && hi >= 90) return `${lo}° or steeper`; // an angle with no upper limit
   return lo <= 0 ? `under ${hi}${u}${note}` : `${lo}–${hi}${u}${note}`;
 }
 

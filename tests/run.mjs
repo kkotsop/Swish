@@ -498,6 +498,20 @@ test('follow camera: a player filling the frame is not zoomed, and unseen bodies
   assert.deepEqual([r.x, r.y, r.w, r.h], [0, 0, 540, 960]);
 });
 
+test('release angle: only a flat release is penalised, a higher arc is never wrong', () => {
+  const rg = config.moves.shooting.ranges.releaseAngle;
+  assert.deepEqual(rg.good, [45, 90]);
+  for (const v of [49, 55, 62, 70, 80, 90]) { const r = scoreValue(v, rg); assert.equal(r.score, 100, `${v} deg`); assert.equal(r.status, 'good'); }
+  assert.ok(scoreValue(46, rg).score >= 85 && scoreValue(46, rg).score < 100, 'just inside the line is good but not full marks');
+  assert.equal(scoreValue(45, rg).score, 85);
+  assert.equal(scoreValue(40, rg).status, 'borderline'); assert.ok(scoreValue(40, rg).score < 85);
+  assert.equal(scoreValue(35, rg).score, 50); assert.equal(scoreValue(20, rg).status, 'needs-work');
+  const flat = { id: 'releaseAngle', value: 30, unit: 'deg', ...scoreValue(30, rg) };
+  assert.notEqual(flat.status, 'good');
+  const adv = templateAdvice('shooting', { releaseAngle: flat }, config.moves.shooting.ranges).releaseAngle;
+  assert.match(adv, /45° or steeper/); assert.doesNotMatch(adv, /58/);
+});
+
 let passed = 0;
 for (const [name, fn] of queue) { await fn(); passed++; console.log('ok -', name); }
 console.log(`\n${passed} tests passed`);
