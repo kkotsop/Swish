@@ -292,14 +292,13 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   // Tempo: load start -> release.
   add('tempo', (release - loadStart) / fps, 's', release, ['lHip', 'rHip'], loadStart, release);
 
-  // Guide (off) hand: where it is as the arm extends and the ball goes, measured as how far the guide wrist hangs below its own
-  // shoulder, in forearm lengths (0 = at shoulder height, negative = up beside the ball or face, 1+ = down at the chest or hip).
-  // From the moment the elbow is straight and a tenth of a second on. Distance to the shooting wrist is no use here: that wrist is
-  // travelling up and away, so the gap grows even when the guide hand is perfectly placed.
-  const gsh = S[guide + 'Shoulder'];
-  const gFrom = release, gTo = Math.min(n - 1, release + rate(0.1));
+  // Guide (off) hand: how far below the shooting wrist the guide wrist is as the arm extends and the ball goes, and just after,
+  // in forearm lengths (0 = level with the shooting hand, positive = the off hand is lower, negative = higher). A guide hand that
+  // has already dropped away while the shooting hand is still up is the fault; the pose model's shoulder-relative height is not
+  // used because a hand that is up at the chin can still be well below a hand that is up at full reach.
+  const gFrom = release, gTo = Math.min(n - 1, release + rate(0.2));
   const gd = [];
-  for (let i = gFrom; i <= gTo; i++) gd.push((gw[i].y - gsh[i].y) / (dist(el[i], wr[i]) || 1));
+  for (let i = gFrom; i <= gTo; i++) gd.push((gw[i].y - wr[i].y) / (dist(el[i], wr[i]) || 1));
   add('guideHand', mean(gd), 'forearms', release, [armNames[2], guide === 'r' ? 'rWrist' : 'lWrist'], gFrom, gTo);
 
   if (weakShot) for (const id of Object.keys(m)) m[id].confidence = 'low';

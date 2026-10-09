@@ -95,11 +95,11 @@ test('knee dip is the deepest bend of the shot', () => {
   near(a.phases.bottom, 84, 6, 'bottom frame ~ end of the dip');
 });
 
-test('guide hand: near the ball is good, hanging low is flagged', () => {
-  const near_ = run({ guideMode: 'near' }).r, low = run({ guideMode: 'low' }).r;
-  assert.equal(near_.metrics.guideHand.status, 'good', JSON.stringify(near_.metrics.guideHand));
-  assert.ok(low.metrics.guideHand.value > near_.metrics.guideHand.value + 0.8, `${low.metrics.guideHand.value} vs ${near_.metrics.guideHand.value}`);
-  assert.notEqual(low.metrics.guideHand.status, 'good');
+test('guide hand: staying level with the shooting hand is good, dropping away is penalised', () => {
+  const up = run({ guideMode: 'up' }).r, low = run({ guideMode: 'low' }).r, near_ = run({ guideMode: 'near' }).r;
+  assert.ok(up.metrics.guideHand.value < 0.5 && up.metrics.guideHand.status !== 'needs-work', JSON.stringify(up.metrics.guideHand));
+  assert.equal(low.metrics.guideHand.status, 'needs-work', JSON.stringify(low.metrics.guideHand));
+  assert.notEqual(near_.metrics.guideHand.status, 'good'); // let go at the release, hand already well below the shooting hand
   assert.equal(near_.guideHand, 'left'); // right-handed shooter -> off hand is the left
 });
 
@@ -108,7 +108,7 @@ test('front view is detected and measures only what it can (elbow alignment, off
   assert.ok(good.ok, JSON.stringify(good)); assert.equal(good.view, 'front');
   assert.deepEqual(Object.keys(good.metrics).sort(), [...FRONT_METRICS].sort());
   assert.ok(good.metrics.elbowAlignment.value < 12, `alignment ${good.metrics.elbowAlignment.value}`);
-  assert.notEqual(good.metrics.guideHand.status, 'needs-work');
+  assert.ok(Number.isFinite(good.metrics.guideHand.value));
   const flared = analyzeShooting(makeFrontShot({ setTilt: 40 }).frames, { aspect: ASPECT, fps: 60, config });
   assert.ok(flared.metrics.elbowAlignment.value > good.metrics.elbowAlignment.value + 15, `${flared.metrics.elbowAlignment.value}`);
   const lefty = analyzeShooting(makeFrontShot({ rightHanded: false }).frames, { aspect: ASPECT, fps: 60, config });

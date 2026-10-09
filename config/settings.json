@@ -34,7 +34,7 @@
         "tempo":         { "good": [0, 1.2], "ideal": [0, 0.8], "tolerance": 0.3 },
         "legArmTiming":  { "good": [0, 0.2], "ideal": [0, 0.1], "tolerance": 0.15 },
         "stance":        { "good": [0.85, 1.4], "ideal": [0.95, 1.25], "tolerance": [0.25, 0.5] },
-        "guideHand":     { "good": [-6, 0.6], "ideal": [-6, 0.2], "tolerance": 1.0 }
+        "guideHand":     { "good": [-6, 0.3], "ideal": [-6, 0.1], "tolerance": 0.5 }
       }
     }
   }

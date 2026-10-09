@@ -80,7 +80,7 @@ export function makeShot(opts = {}) {
     const beta = tt > o.releaseT ? lerp(0, o.followBeta, sstep((tt - o.releaseT) / 0.2)) : 0;
     const index = { x: wrist.x + 0.04 * Math.cos(f(beta)) * face, y: wrist.y + 0.04 * Math.sin(f(beta)) };
     const holding = tt >= o.dipEnd && tt <= o.releaseT + 0.03;
-    const gWrist = o.guideMode === 'near' && holding
+    const gWrist = (o.guideMode === 'near' && holding) || (o.guideMode === 'up' && tt >= o.dipEnd)
       ? { x: wrist.x - 0.03 * face, y: wrist.y + 0.04 }
       : { x: sho.x + 0.03 * face, y: sho.y + (o.guideMode === 'near' ? 0.12 : 0.32) };
     const gElbow = { x: sho.x + 0.02 * face, y: sho.y + 0.1 - 0.04 };
@@ -148,7 +148,7 @@ export function makeFrontShot(opts = {}) {
     }
     const index = { x: wrist.x, y: wrist.y - 0.04 };
     const holding = tt >= o.dipEnd && tt <= o.releaseT + 0.03;
-    const gWrist = o.guideMode === 'near' && holding ? { x: wrist.x - side * 0.06, y: wrist.y + 0.03 } : { x: gsho.x, y: shoY + (o.guideMode === 'near' ? 0.12 : 0.32) };
+    const gWrist = ((o.guideMode === 'near' && holding) || (o.guideMode === 'up' && tt >= o.dipEnd)) ? { x: wrist.x - side * 0.06, y: wrist.y + 0.03 } : { x: gsho.x, y: shoY + (o.guideMode === 'near' ? 0.12 : 0.32) };
     const gElbow = { x: gsho.x, y: shoY + 0.08 };
     const lm = new Array(33).fill(null).map(() => ({ x: 0, y: 0, z: 0, v: 0.95 }));
     const put = (idx, p) => { lm[idx] = { x: p.x / ASPECT, y: p.y, z: 0, v: 0.95 }; };

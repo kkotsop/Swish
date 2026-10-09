@@ -85,11 +85,11 @@ export const SHOOTING_COPY = {
   },
   guideHand: {
     name: 'Guide hand', short: 'Off hand',
-    what: 'How far your off hand hangs below its own shoulder at the moment your arm extends and the ball leaves, in forearm lengths. Negative means it is up above the shoulder.',
-    why: 'The off hand should steady the ball from the side and come away cleanly. If it has already dropped away or hangs low it cannot guide the ball, and if it pushes it adds sidespin and misses left or right.',
+    what: 'How far your off hand is below your shooting hand as the ball leaves and just after, in forearm lengths. Zero means level with the shooting hand; higher means the off hand has dropped.',
+    why: 'The off hand should steady the ball from the side and stay up with the shooting hand through the release. If it drops away while the shooting hand is still up it cannot guide the ball, and if it pushes it adds sidespin and misses left or right.',
     improve: (v, r, res) => res.status === 'good'
-      ? `As the ball leaves, your off hand is still up (${fmt(v, 1)} forearms from shoulder height, negative = above it) beside the ball and coming away cleanly.`
-      : `As the ball leaves, your off hand has dropped ${fmt(v, 1)} forearms below your shoulder; aim for no lower than ${r.good[1]}. It has dropped away. Keep it up on the side of the ball with fingers up and thumb relaxed, and let it come off after the ball does, not before.`,
+      ? `As the ball leaves and just after, your off hand stays up with your shooting hand (${fmt(v, 1)} forearms below it; aim for no more than ${r.good[1]}).`
+      : `As the ball leaves and just after, your off hand is ${fmt(v, 1)} forearms below your shooting hand; aim for no more than ${r.good[1]}. It has dropped away. Keep it up on the side of the ball with fingers up and thumb relaxed, and let it stay up until the ball is gone.`,
   },
 };
 
