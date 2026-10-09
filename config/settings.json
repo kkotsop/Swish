@@ -1,6 +1,7 @@
 {
   "_readme": "Editable settings. Weights and ranges can be changed without rebuilding. Ranges for 'shooting' are PLACEHOLDERS until you run tools/calibrate.html on your reference clips and paste the result here. For each metric: good = [min,max] is the ideal range; tolerance = how far outside 'good' still counts as borderline.",
   "analysisFps": 30,
+  "viewSplit": 0.32,
   "clipSeconds": 5,
   "minFps": 60,
   "hardMinFps": 10,
@@ -19,6 +20,7 @@
   },
   "moves": {
     "shooting": {
+      "confidenceWeights": { "high": 1, "medium": 0.7, "low": 0.25 },
       "weights": {
         "releaseAngle": 1, "forwardDrift": 1, "kneeDip": 1, "elbowAlignment": 1,
         "releaseHeight": 1, "tempo": 1, "legArmTiming": 1, "stance": 1, "guideHand": 1

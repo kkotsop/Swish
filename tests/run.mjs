@@ -9,6 +9,7 @@ import { templateAdvice, personalisedAdvice, scoreBand } from '../js/coaching.js
 import { playerBox, fitAspect } from '../js/crop.js';
 import { project, rubberband } from '../js/motion.js';
 import { weekIndex, journey, milestones, rankFor, LADDER } from '../js/journey.js';
+import { camTarget, stepCam, cropRect } from '../js/followcam.js';
 
 const config = JSON.parse(fs.readFileSync(new URL('../config/settings.json', import.meta.url)));
 const run = (o) => { const s = makeShot(o); return { s, r: analyzeShooting(s.frames, { aspect: ASPECT, fps: 60, config }) }; };
@@ -421,6 +422,80 @@ test('release height is the highest point the hand reaches, not just the release
   const m = r.metrics.releaseHeight;
   assert.ok(m.frame >= r.phases.release - 6 && m.frame <= r.phases.release + 18, `frame ${m.frame} vs release ${r.phases.release}`);
   assert.ok(Number.isFinite(m.value) && m.value > 1, `height ${m.value}`);
+});
+
+test('front or side is decided from shoulder width with a cut-off taken from real clips, and an angled camera is flagged', () => {
+  const squeeze = (k) => makeFrontShot({}).frames.map((f) => ({ ...f, lm: f.lm && f.lm.map((p) => ({ ...p, x: 0.5 + (p.x - 0.5) * k })) }));
+  const at = (k) => analyzeShooting(squeeze(k), { aspect: ASPECT, fps: 60, config });
+  assert.equal(at(0.2).view, 'side'); assert.equal(at(0.2).viewAngled, false);
+  assert.equal(at(0.55).view, 'front'); // about 0.45: turned well toward the camera, like the angled pro clips (0.49-0.69)
+  assert.equal(at(0.42).view, 'front'); assert.equal(at(0.42).viewAngled, true, 'near the cut-off, so the report says so');
+  assert.equal(at(1).viewAngled, false);
+  assert.equal(config.viewSplit, 0.32);
+});
+
+test('calibration helper copes with front-view clips (side-only metrics missing) and proposes an ideal zone', () => {
+  const front = analyzeShooting(makeFrontShot({}).frames, { aspect: ASPECT, fps: 60, config });
+  const side = analyzeShooting(makeShot({}).frames, { aspect: ASPECT, fps: 60, config });
+  const r = rangesFromClips([front, side], ['releaseAngle', 'elbowAlignment', 'tempo']);
+  assert.ok(r.releaseAngle && r.elbowAlignment, 'a metric only one clip has still gets a range');
+  assert.ok(r.tempo.ideal[0] <= r.tempo.ideal[1] && r.tempo.ideal[0] >= r.tempo.good[0]);
+});
+
+test('headline weights each metric by tracking confidence, so a guess barely moves the score', () => {
+  const cw = config.moves.shooting.confidenceWeights, w = {};
+  assert.deepEqual(cw, { high: 1, medium: 0.7, low: 0.25 });
+  const m = (score, confidence) => ({ status: 'good', score, confidence });
+  assert.equal(headlineScore({ a: m(100, 'high'), b: m(40, 'high') }, w, cw), 70);
+  const guessed = headlineScore({ a: m(100, 'high'), b: m(40, 'low') }, w, cw); // 100*1 + 40*.25 over 1.25
+  assert.equal(guessed, 88); assert.ok(guessed > 70, 'the same bad number counts for much less when it was a guess');
+  assert.equal(headlineScore({ a: m(100, 'high'), b: m(40, 'medium') }, w, cw), Math.round((100 + 40 * 0.7) / 1.7));
+  assert.equal(headlineScore({ a: m(80, 'low'), b: m(60, 'low') }, w, cw), 70, 'all low confidence still averages normally');
+  assert.equal(headlineScore({ a: { status: 'good', score: 80 } }, w, cw), 80, 'no confidence field counts fully');
+  assert.equal(headlineScore({ a: m(80, 'high'), b: { status: 'unknown', score: 0, confidence: 'high' } }, w, cw), 80, 'blanks never count');
+  // the real side-view shot: stance is always low confidence, so it cannot sink an otherwise good score
+  const { r } = run({});
+  assert.equal(r.metrics.stance.confidence, 'low');
+  const base = headlineScore(r.metrics, config.moves.shooting.weights, cw);
+  const sunk = { ...r.metrics, stance: { ...r.metrics.stance, score: 0, status: 'needs-work' } };
+  assert.ok(base - headlineScore(sunk, config.moves.shooting.weights, cw) < 8, 'a zero on stance costs under 8 points');
+});
+
+// ---- follow camera for the live view
+const bodyAt = (cx, cy, h, w = h * 0.4) => Array.from({ length: 33 }, (_, i) => ({ x: cx - w / 2 + ((i % 5) / 4) * w, y: cy - h / 2 + (i / 32) * h, v: 0.9 }));
+const settle = (cam, t, steps = 120) => { for (let k = 0; k < steps; k++) stepCam(cam, t, 1 / 30); return cam; };
+
+test('follow camera: a player standing off to one side ends up in the middle of the box, zoomed in', () => {
+  const lm = bodyAt(0.22, 0.55, 0.5); // tall player standing well to the left of a portrait frame
+  const t = camTarget(lm);
+  assert.ok(t.s < 1 && t.s >= 0.42, `zoom ${t.s}`);
+  const cam = settle({ cx: 0.5, cy: 0.5, s: 1 }, t);
+  const r = cropRect(cam, 540, 960);
+  const mid = (r.x + r.w / 2) / 540; // where the window is centred, in the frame
+  near(mid, 0.22, 0.04, 'window centred on the player');
+  assert.ok(r.x >= -0.18 * r.w - 1e-6, 'never slides further past the edge than the overscan');
+  const playerInBox = (0.22 * 540 - r.x) / r.w; // 0.5 = dead centre of the box
+  assert.ok(Math.abs(playerInBox - 0.5) < 0.2, `player sits at ${playerInBox.toFixed(2)} of the box width`);
+});
+
+test('follow camera: starts as the whole frame, glides rather than jumps, never zooms past the floor', () => {
+  const t = camTarget(bodyAt(0.7, 0.5, 0.2)); // small, distant player
+  assert.equal(t.s, 0.42);
+  const cam = { cx: 0.5, cy: 0.5, s: 1 };
+  stepCam(cam, t, 1 / 30);
+  assert.ok(cam.s < 1 && cam.s > 0.95, 'first step is gentle');
+  assert.ok(Math.abs(cam.cx - 0.5) < 0.04, 'and so is the pan');
+  settle(cam, t);
+  near(cam.cx, 0.7, 0.01, 'then it arrives'); near(cam.s, 0.42, 0.01, 'zoom arrives');
+  const before = { ...cam }; stepCam(cam, null, 1); assert.deepEqual(cam, before, 'no detection: the camera holds still');
+});
+
+test('follow camera: a player filling the frame is not zoomed, and unseen bodies give no target', () => {
+  assert.equal(camTarget(bodyAt(0.5, 0.5, 0.9)).s, 1);
+  assert.equal(camTarget(null), null);
+  assert.equal(camTarget(Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, v: 0.05 }))), null);
+  const r = cropRect({ cx: 0.5, cy: 0.5, s: 1 }, 540, 960);
+  assert.deepEqual([r.x, r.y, r.w, r.h], [0, 0, 540, 960]);
 });
 
 let passed = 0;

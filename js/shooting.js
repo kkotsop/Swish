@@ -98,7 +98,11 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
 
   // ---- Camera view: front-on shows wide shoulders, side-on shows them stacked (measured during the shot only).
   const widthRatio = median(shotWin.map((i) => Math.abs(S.lShoulder[i].x - S.rShoulder[i].x) / (dist(midSh[i], midHip[i]) || torso)));
-  const view = config.view === 'front' || config.view === 'side' ? config.view : widthRatio > 0.55 ? 'front' : 'side';
+  // Cut-off from real clips: side-on read 0.04-0.18, front-on and three-quarter clips 0.49-0.69 (shoulder width / torso length).
+  // 0.32 is about 22 degrees off side-on; anything more turned toward the camera counts as front.
+  const split = config.viewSplit ?? 0.32;
+  const view = config.view === 'front' || config.view === 'side' ? config.view : widthRatio > split ? 'front' : 'side';
+  const viewAngled = widthRatio > split * 0.7 && widthRatio < split * 1.4; // close to the cut-off: the angle is neither clearly side nor front
 
   // ---- Shooting hand. Clues: the shooting arm straightens fully at the top of the shot (the guide hand comes off the ball
   //      still bent) and its wrist gets highest. Side-on, the two arms sit on top of each other in the picture and cannot be
@@ -288,7 +292,7 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
 
   if (weakShot) for (const id of Object.keys(m)) m[id].confidence = 'low';
   return {
-    ok: true, hand, handAmbiguous, handSource, handGap, weakShot, facing, view, widthRatio,
+    ok: true, hand, handAmbiguous, handSource, handGap, weakShot, facing, view, widthRatio, viewAngled,
     phases: { loadStart, bottom, takeoff, set, release, apex, landing },
     metrics: m,
     metricIds: displayMetrics(view),
@@ -296,11 +300,14 @@ export function analyzeShooting(frames, { aspect = 9 / 16, fps = 60, config }) {
   };
 }
 
-/** Headline score = weighted mean of the scores of the metrics that were measured. */
-export function headlineScore(metrics, weights) {
+/** How much a metric counts toward the headline, by how well it was tracked (a guess should not drag the score around). */
+export const DEFAULT_CONFIDENCE_WEIGHTS = { high: 1, medium: 0.7, low: 0.25 };
+
+/** Headline score = weighted mean of the scores of the metrics that were measured, each weighted by its tracking confidence. */
+export function headlineScore(metrics, weights, confidenceWeights = DEFAULT_CONFIDENCE_WEIGHTS) {
   let s = 0, w = 0;
   for (const id of Object.keys(metrics)) {
-    const wt = weights[id] ?? 1;
+    const wt = (weights[id] ?? 1) * (confidenceWeights[metrics[id] && metrics[id].confidence] ?? 1);
     if (metrics[id] && metrics[id].status !== 'unknown') { s += metrics[id].score * wt; w += wt; }
   }
   return w ? Math.round(s / w) : 0;

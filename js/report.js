@@ -11,7 +11,7 @@ const CONF_WORD = { high: 'High', medium: 'Medium', low: 'Low' };
 const VIEW_LABEL = { side: 'Side view', front: 'Front view' };
 const badge = (status, big = false) => h('span', { class: `flag ${status}${big ? ' big' : ''}` }, icon(STATUS_ICON[status] || 'dash', 14), STATUS_LABEL[status]);
 const confBars = (c) => h('span', { class: `conf ${c}`, role: 'img', 'aria-label': `${CONF_WORD[c]} tracking confidence`, title: `${CONF_WORD[c]} tracking confidence` }, h('i'), h('i'), h('i'));
-const factsBlock = (m, r) => h('div', { class: 'facts rise' }, h('div', { class: 'fact' }, h('span', {}, 'You'), h('b', {}, fmtValue(m) + (m.unit === 'deg' || m.unit === 's' ? '' : unitNote(m)))),
+const factsBlock = (m, r) => h('div', { class: 'facts rise' }, h('div', { class: 'fact' }, h('span', {}, 'You'), h('b', {}, fmtValue(m) + (!Number.isFinite(m.value) || m.unit === 'deg' || m.unit === 's' ? '' : unitNote(m)))),
   h('div', { class: 'fact' }, h('span', {}, 'Target'), h('b', {}, targetText(m, r))), h('span', { class: 'conf-note' }, m.status === 'unknown' ? 'Not measured in this clip' : `${CONF_WORD[m.confidence]} tracking confidence`));
 
 export function fmtValue(m) {
@@ -172,7 +172,7 @@ export function renderReport({ result, move, profile, actions, saved = true, pre
     slides.push(slideOf[id] = h('section', { class: 'slide metric', 'aria-label': c.name },
       h('div', { class: 'mcat rise' }, CATEGORIES[catIndex(id)].name),
       h('div', { class: 'mhead rise' }, h('div', { class: 'cap' }, c.name, m.status === 'unknown' ? '' : ` · ${m.score}/100`), badge(m.status)),
-      result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: id }) : null,
+      result.stills[m.frame] ? frameCanvas(result.stills[m.frame], { hand: result.hand, metricId: m.status === 'unknown' ? null : id }) : null, // a blank has nothing to point at
       factsBlock(m, r), zoneBar(m, r, marks),
       h('h4', { class: 'rise' }, m.status === 'good' ? 'Keep it up' : 'How to improve'), h('p', { class: 'fix rise' }, result.advice[id]),
       h('h4', { class: 'rise' }, 'Why it matters'), h('p', { class: 'why rise' }, c.why)));

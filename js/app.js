@@ -9,9 +9,10 @@ import { runAnalysis } from './analyze.js';
 import { renderReport } from './report.js';
 import { lineChart, trend } from './progress.js';
 import { drawSkeleton } from './skeleton.js';
+import { camTarget, stepCam, drawFollow } from './followcam.js';
 import { icon, throwSvg, ballFireIcon } from './icons.js';
 import { initPress } from './motion.js';
-import { token } from './tokens.js';
+import { token, reducedMotion } from './tokens.js';
 import { journey, milestones, LADDER, PER_WEEK } from './journey.js';
 import { celebrate } from './celebrate.js';
 
@@ -229,17 +230,30 @@ async function analyzeScreen(clip) {
   const still = clip.poster && !(clip.start > 0) ? clip.poster : null; // the frame you just saw stays up; after a trim it would be the wrong moment
   const preview = h('canvas', { style: { display: 'none' }, role: 'img', 'aria-label': 'Live view of the player being tracked' });
   const stage = h('div', { class: `stage${still ? ' has-video' : ''}` }, still || throwSvg(), preview);
+  // Follow camera: eases a zoomed window onto the player, redrawn every animation frame so it glides between the (slow) model results.
+  const cam = { cx: 0.5, cy: 0.5, s: 1 }; // starts as the whole frame, exactly like the picture you just saw, then glides in
+  let target = { cx: 0.5, cy: 0.5, s: 1 }, latest = null, raf = 0, lastT = 0, shown = false;
+  const follow = (now) => {
+    if (!preview.isConnected) { raf = 0; return; } // the screen has moved on
+    if (now - lastT >= 30) { // about 30 frames a second is plenty and leaves the model its time
+      stepCam(cam, target, lastT ? Math.min(0.1, (now - lastT) / 1000) : 0.016);
+      lastT = now;
+      if (latest) drawFollow(preview.getContext('2d'), latest.src, cam, latest.lm, drawSkeleton);
+    }
+    raf = requestAnimationFrame(follow);
+  };
   mount(h('div', { class: 'screen' }, h('header', { class: 'topbar' }, status), stage,
     h('div', { class: 'slot' }, h('div', { class: 'loader' }, h('div', { class: 'progress-track', role: 'progressbar', 'aria-label': 'Analysis progress' }, bar), detail)),
     h('div', { style: { height: `${S.reserve || 48}px`, flex: 'none' } }), // the film screen's buttons were here: keep the picture the same size
     warn ? h('div', { class: 'tiny-note' }, icon('alert', 14), warn.message) : null));
   requestAnimationFrame(() => { bar.style.transition = ''; });
   try {
-    const out = await runAnalysis({ clip, move: S.move, config: { ...S.config, hand: S.profile.hand || null }, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton
-      stage.replaceChildren(preview); stage.classList.add('has-video'); preview.style.display = '';
-      preview.width = src.width; preview.height = src.height;
-      const ctx = preview.getContext('2d'); ctx.drawImage(src, 0, 0);
-      if (lm) drawSkeleton(ctx, lm, { w: src.width, h: src.height, hand: null });
+    const out = await runAnalysis({ clip, move: S.move, config: { ...S.config, hand: S.profile.hand || null }, onStatus: (t) => { detail.textContent = t; }, onPreview: (src, lm) => { // live view of who is being tracked: green box + skeleton, with a camera that keeps the player centred
+      if (!shown) { shown = true; stage.replaceChildren(preview); stage.classList.add('has-video'); preview.style.display = ''; preview.width = src.width; preview.height = src.height; }
+      latest = { src, lm };
+      const t = camTarget(lm);
+      if (t) { target = t; if (reducedMotion()) Object.assign(cam, t); }
+      if (!raf) raf = requestAnimationFrame(follow);
     },
     onProgress: (p, info) => { bar.style.transform = `scaleX(${READ_SHARE + (1 - READ_SHARE) * Math.max(0, Math.min(1, p))})`; if (info) detail.textContent = `Frame ${info.done} of ${info.total}${info.etaSec != null ? ` · ${Math.max(1, Math.round(info.etaSec))}s left` : ''}`; } });
     if (!out.ok) return go(errorScreen, out.message);

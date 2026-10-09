@@ -57,7 +57,6 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
 
   onStatus('Building your report…');
   const ranges = mcfg.ranges;
-  const score = move.headline(analysis.metrics, mcfg.weights);
   const stills = {};
   const lastFrame = subject.frames.length - 1;
   for (const id of analysis.metricIds) if (!analysis.metrics[id]) analysis.metrics[id] = blankMetric(id, analysis.phases.release); // keep every card, blank where it could not be measured
@@ -73,6 +72,7 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
     }
   }
   if (analysis.weakShot) warnings.push(MESSAGES.weakShot);
+  if (analysis.viewAngled) warnings.push(`Filmed at an angle, so we treated it as ${analysis.view}-on. For the cleanest numbers film exactly side-on or exactly facing the phone.`);
   const lower = { high: 'medium', medium: 'low', low: 'low' };
   const shaky = tracking.notes.length > 0; // dark, small or crowded clips: every number is less certain
   if (shaky) for (const m of Object.values(analysis.metrics)) m.confidence = lower[m.confidence] || 'low';
@@ -81,6 +81,7 @@ export async function runAnalysis({ clip, move, config, onStatus, onProgress, on
       if (analysis.metrics[id] && analysis.metrics[id].confidence === 'high') analysis.metrics[id].confidence = 'medium';
     }
   }
+  const score = move.headline(analysis.metrics, mcfg.weights, mcfg.confidenceWeights); // after the confidence adjustments above
   const advice = await personalisedAdvice(move.id, analysis.metrics, ranges, config);
   const replay = { fps: fps / 2, aspect: pass.aspect, frames: [...replayByFrame.keys()].sort((x, y) => x - y).map((i) => ({ src: replayByFrame.get(i), lm: subject.frames[i]?.lm || null })) };
   return { ok: true, result: { move: move.id, ts: Date.now(), hand: analysis.hand, handAmbiguous: analysis.handAmbiguous, handSource: analysis.handSource, score, metrics: analysis.metrics, metricIds: analysis.metricIds, view: analysis.view, replay, stills, advice, ranges, warnings } };

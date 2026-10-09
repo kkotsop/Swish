@@ -127,6 +127,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
   const n = Math.floor(duration * fps);
   const canvas = document.createElement('canvas'); // what the model sees: the frame, or a zoomed crop of it
   const view = document.createElement('canvas'); // always the full frame, for the live preview and replay stills
+  const sharp = hooks.onPreview ? document.createElement('canvas') : null; // a bigger full frame for the live view, which zooms in on the player (the model's 512 px would look soft)
   const EARLY = Math.min(n, 15);
   const S = { per: new Array(n).fill(null), lumas: [], crop: null, checked: false, scouted: false, done: 0, detMs: 0, t0: performance.now() };
   /**
@@ -182,6 +183,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
     // everything that reads the video must happen before `between` (which may start the next seek)
     const wantSample = hooks.onSample && i % 2 === 0, wantPreview = hooks.onPreview && i % 3 === 0;
     const src = (wantSample || wantPreview) ? (S.crop ? (drawFrame(video, view, 512, null), view) : canvas) : null;
+    if (wantPreview) drawFrame(video, sharp, 1280, null);
     if (hooks.onStill && i % 3 === 0) hooks.onStill(video, i);
     if (wantSample) hooks.onSample(src, i);
     if (between) between(); // e.g. start the next seek now, so the decoder works while the model runs
@@ -208,7 +210,7 @@ export async function processClip(video, { start, duration, fps }, cfg, onProgre
         if (c) { S.crop = c; return 'restart'; }
       }
     }
-    if (wantPreview) hooks.onPreview(src, mainPose(poses));
+    if (wantPreview) hooks.onPreview(sharp, mainPose(poses)); // landmarks are already in full-frame coordinates (uncropped above)
     if (onProgress) {
       const elapsed = (performance.now() - S.t0) / 1000;
       onProgress(S.done / n, { done: S.done, total: n, etaSec: S.done > 4 ? (elapsed / S.done) * (n - S.done) : null, modelMs: Math.round(S.detMs / S.done), frameMs: Math.round((elapsed * 1000) / S.done) });
