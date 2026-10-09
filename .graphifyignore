@@ -1,0 +1,3 @@
+# keep third-party and binary assets out of the knowledge graph
+vendor/
+models/
